@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { 
   Calendar as CalendarIcon, Video, Users as UsersIcon, 
-  Clock, Plus, AlertCircle, ShieldCheck, Trash2, ExternalLink, PlayCircle,
-  MessageCircle, Film, CheckCircle2 
+  Clock, Plus, AlertCircle, Trash2, ExternalLink, PlayCircle,
+  MessageCircle, Film
 } from "lucide-react";
+import { useGoogleLogin } from '@react-oauth/google'; 
 import { supabase } from "../lib/supabase";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/PageHeader";
@@ -59,7 +60,68 @@ export default function Sessions() {
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { 
+    const getProfile = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from("profiles").select("full_name").eq("id", user.id).single();
+        if (data?.full_name) setFormData(prev => ({ ...prev, trainer: data.full_name }));
+      }
+    };
+    getProfile();
+    fetchData(); 
+  }, []);
+
+  // --- GOOGLE MEET GENERATION  ---
+  const generateMeetLink = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      const toastId = toast.loading("Generating Google Meet link...");
+      try {
+        // Prepare Start and End times 
+        const startDateTime = `${formData.date}T${formData.time}:00Z`;
+        const endDate = new Date(`${formData.date}T${formData.time}:00Z`);
+        endDate.setHours(endDate.getHours() + 1);
+        const endDateTime = endDate.toISOString();
+
+        const response = await fetch(
+          "https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${tokenResponse.access_token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              summary: formData.title || "Fitness Session",
+              description: `Trainer: ${formData.trainer}`,
+              start: { dateTime: startDateTime },
+              end: { dateTime: endDateTime }, 
+              conferenceData: {
+                createRequest: {
+                  requestId: Math.random().toString(36).substring(7),
+                  conferenceSolutionKey: { type: "hangoutsMeet" },
+                },
+              },
+            }),
+          }
+        );
+
+        const data = await response.json();
+        
+        if (data.hangoutLink) {
+          setFormData(prev => ({ ...prev, link: data.hangoutLink, platform: 'google_meet' }));
+          toast.success("Google Meet link ready!", { id: toastId });
+        } else {
+          console.error("Google API Response:", data);
+          toast.error("Google rejected the request. Check your Client ID settings.", { id: toastId });
+        }
+      } catch (error) {
+        toast.error("Check your internet or Google Console settings.", { id: toastId });
+      }
+    },
+    //'event' write and 'calendar' read/write scopes
+    scope: 'https://www.googleapis.com/auth/calendar.events',
+  });
 
   const getLiveStatus = (scheduledAt: string) => {
     const startTime = new Date(scheduledAt).getTime();
@@ -104,11 +166,10 @@ export default function Sessions() {
     toast.success(`${formData.type === 'recorded' ? 'Recorded video' : 'Live session'} added!`);
     setIsModalOpen(false);
     setIsBypassActive(false);
-    setFormData({
-      title: "", trainer: "", platform: "zoom", type: "live", link: "",
-      date: new Date().toISOString().split('T')[0], time: "10:00",
-      isMass: true, selectedClientIds: []
-    });
+    setFormData(prev => ({
+      ...prev,
+      title: "", link: "", type: "live", isMass: true, selectedClientIds: []
+    }));
     fetchData();
   };
 
@@ -167,21 +228,7 @@ export default function Sessions() {
                 </div>
               </div>
 
-              {sessions.filter(s => s.scheduled_at.startsWith(formData.date)).length >= 1 && !isBypassActive && formData.type === 'live' && (
-                <div className="bg-[#0ea5e9] text-white p-4 rounded-xl flex items-start gap-3 shadow-md">
-                  <AlertCircle className="w-5 h-5 mt-0.5" />
-                  <div className="text-xs">
-                    <p className="font-bold">Limit Check: 1-session limit reached for this day.</p>
-                    <button 
-                      onClick={() => { if(prompt("Admin Code:") === "1234") setIsBypassActive(true); }} 
-                      className="underline mt-1 font-medium hover:text-white/80 transition-colors"
-                    >
-                      Request Bypass (Requires Admin Code)
-                    </button>
-                  </div>
-                </div>
-              )}
-
+              {/* Assignment Mode */}
               <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-lg">
                 <Label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Assignment Mode</Label>
                 <div className="flex items-center gap-2">
@@ -215,15 +262,31 @@ export default function Sessions() {
                     <SelectTrigger className="border-slate-200"><SelectValue placeholder="Select" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="zoom">Zoom</SelectItem>
-                      <SelectItem value="teams">Google Teams</SelectItem>
+                      <SelectItem value="google_meet">Google Meet</SelectItem>
                       <SelectItem value="whatsapp">WhatsApp</SelectItem>
                       <SelectItem value="youtube">YouTube</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label className="text-slate-600">Video Link / URL</Label>
-                  <Input className="border-slate-200" onChange={(e) => setFormData({...formData, link: e.target.value})} />
+                  <div className="flex items-center justify-between">
+                    <Label className="text-slate-600">Video Link</Label>
+                    {/* The Generator Button */}
+                    <Button 
+                      type="button"
+                      variant="ghost" 
+                      className="h-6 text-[10px] text-[#0ea5e9] hover:bg-sky-50 px-2 flex items-center gap-1"
+                      onClick={() => generateMeetLink()}
+                    >
+                      <Video className="w-3 h-3" /> Auto-Meet
+                    </Button>
+                  </div>
+                  <Input 
+                    className="border-slate-200" 
+                    placeholder="Link will appear here..."
+                    value={formData.link}
+                    onChange={(e) => setFormData({...formData, link: e.target.value})} 
+                  />
                 </div>
               </div>
             </div>
@@ -245,7 +308,7 @@ export default function Sessions() {
 
       {/* SCHEDULE TABLE */}
       <Card className="border-none shadow-sm">
-        <CardHeader><CardTitle className="text-xl font-bold text-slate-800">Today's Schedule</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-xl font-bold text-slate-800">Session Management</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-3">
             {loading ? <p className="text-center py-4 text-slate-400">Syncing with database...</p> : 
@@ -253,33 +316,34 @@ export default function Sessions() {
              sessions.map((session) => {
               const live = getLiveStatus(session.scheduled_at) && session.type !== 'recorded';
               const pCount = session.admin_is_mass ? clients.length : (session.session_assignments?.[0]?.count || 0);
-              const isWhatsApp = session.platform === 'whatsapp';
               const isRecorded = session.type === 'recorded';
 
               return (
                 <div key={session.id} className="group flex items-center gap-4 p-5 rounded-2xl border border-slate-100 hover:border-sky-100 hover:bg-sky-50/30 transition-all">
                   <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white shadow-sm ${live ? 'bg-[#0ea5e9] animate-pulse' : isRecorded ? 'bg-slate-800' : 'bg-slate-200'}`}>
-                    {isRecorded ? <Film className="w-6 h-6" /> : isWhatsApp ? <MessageCircle className="w-6 h-6" /> : <PlayCircle className="w-6 h-6 text-slate-400" />}
+                    {isRecorded ? <Film className="w-6 h-6" /> : session.platform === 'whatsapp' ? <MessageCircle className="w-6 h-6" /> : <PlayCircle className="w-6 h-6 text-slate-400" />}
                   </div>
                   
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <h4 className="font-semibold text-slate-800">{session.title}</h4>
-                      <Badge variant="secondary" className="bg-slate-100 text-slate-600 text-[10px] uppercase border-none font-bold">{session.platform}</Badge>
+                      <Badge variant="secondary" className="bg-slate-100 text-slate-600 text-[10px] uppercase border-none font-bold">
+                        {session.platform === 'google_meet' ? 'Google Meet' : session.platform}
+                      </Badge>
                       {live && <Badge className="bg-[#0ea5e9] text-white text-[10px] uppercase font-bold">LIVE</Badge>}
                     </div>
                     <p className="text-sm text-slate-400 font-medium capitalize">Coach {session.instructor}</p>
                   </div>
 
                   <div className="hidden md:flex items-center gap-6 text-slate-400 text-sm">
-                    <div className="flex items-center gap-1.5 font-medium"><Clock className="w-4 h-4 text-slate-300" /><span>{new Date(session.scheduled_at).toLocaleDateString()}</span></div>
+                    <div className="flex items-center gap-1.5 font-medium"><Clock className="w-4 h-4 text-slate-300" /><span>{new Date(session.scheduled_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>
                     <div className="flex items-center gap-1.5 font-medium"><UsersIcon className="w-4 h-4 text-slate-300" /><span>{pCount} Clients</span></div>
                   </div>
 
                   <div className="flex items-center gap-2 ml-4">
                     <Button 
                         variant="ghost" 
-                        className="text-[#0ea5e9] font-bold hover:bg-sky-50 hover:text-[#0ea5e9]" 
+                        className="text-[#0ea5e9] font-bold hover:bg-sky-50" 
                         onClick={() => window.open(session.meeting_link, '_blank')}
                     >
                         View
@@ -298,9 +362,11 @@ export default function Sessions() {
 
 function StatCard({ title, value, icon, bgColor }: any) {
   return (
-    <Card className="border-none shadow-sm"><CardContent className="pt-6 flex items-center justify-between">
-      <div><p className="text-xs font-bold text-slate-400 uppercase tracking-tight mb-1">{title}</p><p className="text-3xl font-bold text-slate-800">{value}</p></div>
-      <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${bgColor}`}>{icon}</div>
-    </CardContent></Card>
+    <Card className="border-none shadow-sm">
+      <CardContent className="pt-6 flex items-center justify-between">
+        <div><p className="text-xs font-bold text-slate-400 uppercase tracking-tight mb-1">{title}</p><p className="text-3xl font-bold text-slate-800">{value}</p></div>
+        <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${bgColor}`}>{icon}</div>
+      </CardContent>
+    </Card>
   );
 }
