@@ -1,122 +1,306 @@
-import { Calendar as CalendarIcon, Video, Users as UsersIcon, Clock, Play, Plus } from "lucide-react";
+import { useState, useEffect } from "react";
+import { 
+  Calendar as CalendarIcon, Video, Users as UsersIcon, 
+  Clock, Plus, AlertCircle, ShieldCheck, Trash2, ExternalLink, PlayCircle,
+  MessageCircle, Film, CheckCircle2 
+} from "lucide-react";
+import { supabase } from "../lib/supabase";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-const upcomingSessions = [
-  { id: 1, title: "Morning HIIT Blast", trainer: "Coach Maria", time: "9:00 AM", duration: "45 min", participants: 24, type: "live", status: "upcoming" },
-  { id: 2, title: "Yoga Flow", trainer: "Coach Elena", time: "10:30 AM", duration: "60 min", participants: 18, type: "live", status: "upcoming" },
-  { id: 3, title: "Strength Foundations", trainer: "Coach David", time: "12:00 PM", duration: "50 min", participants: 32, type: "live", status: "live" },
-  { id: 4, title: "Core Conditioning", trainer: "Coach Maria", time: "2:00 PM", duration: "30 min", participants: 15, type: "recorded", status: "upcoming" },
-  { id: 5, title: "Evening Cardio", trainer: "Coach David", time: "6:00 PM", duration: "45 min", participants: 28, type: "live", status: "upcoming" },
-];
+import { 
+  Dialog, DialogContent, DialogHeader, 
+  DialogTitle, DialogTrigger, DialogFooter 
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from "sonner";
 
 export default function Sessions() {
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [clients, setClients] = useState<any[]>([]); 
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBypassActive, setIsBypassActive] = useState(false);
+  
+  const [formData, setFormData] = useState({
+    title: "",
+    trainer: "",
+    platform: "zoom",
+    type: "live", 
+    link: "",
+    date: new Date().toISOString().split('T')[0],
+    time: "10:00",
+    isMass: true,
+    selectedClientIds: [] as string[]
+  });
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [sessRes, clientRes] = await Promise.all([
+        supabase.from("sessions").select("*, session_assignments(count)").order("scheduled_at", { ascending: false }),
+        supabase.from("profiles").select("id, full_name")
+      ]);
+      
+      if (sessRes.error) throw sessRes.error;
+      setSessions(sessRes.data || []);
+      if (clientRes.data) setClients(clientRes.data);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const getLiveStatus = (scheduledAt: string) => {
+    const startTime = new Date(scheduledAt).getTime();
+    const now = new Date().getTime();
+    const duration = 60 * 60 * 1000; 
+    return now >= startTime && now <= (startTime + duration);
+  };
+
+  const handleToggleClient = (clientId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      selectedClientIds: prev.selectedClientIds.includes(clientId)
+        ? prev.selectedClientIds.filter(id => id !== clientId)
+        : [...prev.selectedClientIds, clientId]
+    }));
+  };
+
+  const handleAddSession = async () => {
+    if (!formData.link || !formData.title) return toast.error("Title and Link are required");
+
+    const { data: newSession, error: sessErr } = await supabase.from("sessions").insert([{
+      title: formData.title,
+      instructor: formData.trainer || "Coach",
+      platform: formData.platform,
+      type: formData.type, 
+      meeting_link: formData.link,
+      scheduled_at: `${formData.date}T${formData.time}:00`,
+      admin_is_mass: formData.isMass,
+      admin_status: "upcoming"
+    }]).select().single();
+
+    if (sessErr) return toast.error(sessErr.message);
+
+    if (!formData.isMass && formData.selectedClientIds.length > 0) {
+      const assignments = formData.selectedClientIds.map(cid => ({ 
+        session_id: newSession.id, 
+        client_id: cid 
+      }));
+      await supabase.from("session_assignments").insert(assignments);
+    }
+
+    toast.success(`${formData.type === 'recorded' ? 'Recorded video' : 'Live session'} added!`);
+    setIsModalOpen(false);
+    setIsBypassActive(false);
+    setFormData({
+      title: "", trainer: "", platform: "zoom", type: "live", link: "",
+      date: new Date().toISOString().split('T')[0], time: "10:00",
+      isMass: true, selectedClientIds: []
+    });
+    fetchData();
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this session?")) return;
+    const { error } = await supabase.from("sessions").delete().eq("id", id);
+    if (error) toast.error(error.message);
+    else fetchData();
+  };
+
   return (
     <DashboardLayout>
-      <PageHeader 
-        title="Sessions" 
-        description="Manage live and recorded workout sessions."
-      >
-        <Button className="gradient-accent text-accent-foreground hover:opacity-90 transition-opacity">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Session
-        </Button>
+      <PageHeader title="Sessions" description="Manage your Live workouts and Recorded Library.">
+        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          <DialogTrigger asChild>
+            <Button className="bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white shadow-sm">
+              <Plus className="w-4 h-4 mr-2" /> Add Session
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[550px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader><DialogTitle className="text-slate-800">Schedule New Session</DialogTitle></DialogHeader>
+            <div className="grid gap-4 py-2">
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label className="text-slate-600">Session Type</Label>
+                  <Select value={formData.type} onValueChange={(v) => setFormData({...formData, type: v})}>
+                    <SelectTrigger className="border-slate-200 bg-slate-50/50">
+                      <SelectValue placeholder="Select Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="live">Live Streaming</SelectItem>
+                      <SelectItem value="recorded">Recorded Library</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label className="text-slate-600">Trainer / Coach</Label>
+                  <Input value={formData.trainer} className="border-slate-200" onChange={(e) => setFormData({...formData, trainer: e.target.value})} />
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <Label className="text-slate-600">Session Title</Label>
+                <Input value={formData.title} className="border-slate-200" onChange={(e) => setFormData({...formData, title: e.target.value})} />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label className="text-slate-600">Date</Label>
+                  <Input type="date" className="border-slate-200" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
+                </div>
+                <div className="grid gap-2">
+                  <Label className="text-slate-600">Time</Label>
+                  <Input type="time" className="border-slate-200" value={formData.time} onChange={(e) => setFormData({...formData, time: e.target.value})} />
+                </div>
+              </div>
+
+              {sessions.filter(s => s.scheduled_at.startsWith(formData.date)).length >= 1 && !isBypassActive && formData.type === 'live' && (
+                <div className="bg-[#0ea5e9] text-white p-4 rounded-xl flex items-start gap-3 shadow-md">
+                  <AlertCircle className="w-5 h-5 mt-0.5" />
+                  <div className="text-xs">
+                    <p className="font-bold">Limit Check: 1-session limit reached for this day.</p>
+                    <button 
+                      onClick={() => { if(prompt("Admin Code:") === "1234") setIsBypassActive(true); }} 
+                      className="underline mt-1 font-medium hover:text-white/80 transition-colors"
+                    >
+                      Request Bypass (Requires Admin Code)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-lg">
+                <Label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Assignment Mode</Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400">Individual</span>
+                  <Switch checked={formData.isMass} onCheckedChange={(v) => setFormData({...formData, isMass: v})} />
+                  <span className="text-[10px] text-slate-600 font-medium">All Users</span>
+                </div>
+              </div>
+
+              {!formData.isMass && (
+                <div className="border rounded-xl p-4 bg-slate-50/50 border-slate-200">
+                  <Label className="text-xs font-bold text-[#0ea5e9] mb-2 block">Select Clients ({formData.selectedClientIds.length})</Label>
+                  <ScrollArea className="h-[120px] pr-4">
+                    {clients.map(client => (
+                      <div key={client.id} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+                        <span className="text-xs text-slate-600">{client.full_name}</span>
+                        <Checkbox 
+                          checked={formData.selectedClientIds.includes(client.id)}
+                          onCheckedChange={() => handleToggleClient(client.id)}
+                        />
+                      </div>
+                    ))}
+                  </ScrollArea>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label className="text-slate-600">Platform</Label>
+                  <Select value={formData.platform} onValueChange={(v) => setFormData({...formData, platform: v})}>
+                    <SelectTrigger className="border-slate-200"><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="zoom">Zoom</SelectItem>
+                      <SelectItem value="teams">Google Teams</SelectItem>
+                      <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                      <SelectItem value="youtube">YouTube</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label className="text-slate-600">Video Link / URL</Label>
+                  <Input className="border-slate-200" onChange={(e) => setFormData({...formData, link: e.target.value})} />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleAddSession} className="w-full bg-[#0ea5e9] hover:bg-[#0ea5e9]/90 text-white font-bold">
+                {formData.type === 'recorded' ? 'Push to Recorded Library' : 'Schedule Live Session'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </PageHeader>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
-        <Card className="shadow-card">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Live Now</p>
-                <p className="text-3xl font-bold text-foreground">3</p>
-              </div>
-              <div className="p-3 rounded-xl bg-success/10">
-                <Video className="w-6 h-6 text-success" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-card">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Today's Sessions</p>
-                <p className="text-3xl font-bold text-foreground">12</p>
-              </div>
-              <div className="p-3 rounded-xl bg-accent/10">
-                <CalendarIcon className="w-6 h-6 text-accent" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-card">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Participants</p>
-                <p className="text-3xl font-bold text-foreground">247</p>
-              </div>
-              <div className="p-3 rounded-xl bg-primary/10">
-                <UsersIcon className="w-6 h-6 text-primary" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* STATS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <StatCard title="Live Now" value={sessions.filter(s => getLiveStatus(s.scheduled_at) && s.type !== 'recorded').length} icon={<Video className="text-[#0ea5e9]" />} bgColor="bg-sky-50" />
+        <StatCard title="Total Workouts" value={sessions.length} icon={<CalendarIcon className="text-[#0ea5e9]" />} bgColor="bg-sky-50" />
+        <StatCard title="Active Clients" value={clients.length} icon={<UsersIcon className="text-slate-400" />} bgColor="bg-slate-50" />
       </div>
 
-      <Card className="shadow-card animate-slide-up">
-        <CardHeader>
-          <CardTitle className="font-display">Today's Schedule</CardTitle>
-        </CardHeader>
+      {/* SCHEDULE TABLE */}
+      <Card className="border-none shadow-sm">
+        <CardHeader><CardTitle className="text-xl font-bold text-slate-800">Today's Schedule</CardTitle></CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {upcomingSessions.map((session) => (
-              <div 
-                key={session.id}
-                className="flex items-center gap-4 p-4 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors"
-              >
-                <div className="w-12 h-12 rounded-xl gradient-accent flex items-center justify-center flex-shrink-0">
-                  {session.status === "live" ? (
-                    <Video className="w-6 h-6 text-accent-foreground animate-pulse" />
-                  ) : (
-                    <Play className="w-6 h-6 text-accent-foreground" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium text-foreground truncate">{session.title}</p>
-                    {session.status === "live" && (
-                      <Badge variant="destructive" className="animate-pulse-glow">LIVE</Badge>
-                    )}
-                    <Badge variant={session.type === "live" ? "default" : "secondary"}>
-                      {session.type}
-                    </Badge>
+          <div className="space-y-3">
+            {loading ? <p className="text-center py-4 text-slate-400">Syncing with database...</p> : 
+             sessions.length === 0 ? <p className="text-center py-4 text-slate-400">No sessions found.</p> :
+             sessions.map((session) => {
+              const live = getLiveStatus(session.scheduled_at) && session.type !== 'recorded';
+              const pCount = session.admin_is_mass ? clients.length : (session.session_assignments?.[0]?.count || 0);
+              const isWhatsApp = session.platform === 'whatsapp';
+              const isRecorded = session.type === 'recorded';
+
+              return (
+                <div key={session.id} className="group flex items-center gap-4 p-5 rounded-2xl border border-slate-100 hover:border-sky-100 hover:bg-sky-50/30 transition-all">
+                  <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white shadow-sm ${live ? 'bg-[#0ea5e9] animate-pulse' : isRecorded ? 'bg-slate-800' : 'bg-slate-200'}`}>
+                    {isRecorded ? <Film className="w-6 h-6" /> : isWhatsApp ? <MessageCircle className="w-6 h-6" /> : <PlayCircle className="w-6 h-6 text-slate-400" />}
                   </div>
-                  <p className="text-sm text-muted-foreground">{session.trainer}</p>
-                </div>
-                <div className="flex items-center gap-6 text-sm text-muted-foreground">
-                  <div className="flex items-center gap-1">
-                    <Clock className="w-4 h-4" />
-                    {session.time}
+                  
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="font-semibold text-slate-800">{session.title}</h4>
+                      <Badge variant="secondary" className="bg-slate-100 text-slate-600 text-[10px] uppercase border-none font-bold">{session.platform}</Badge>
+                      {live && <Badge className="bg-[#0ea5e9] text-white text-[10px] uppercase font-bold">LIVE</Badge>}
+                    </div>
+                    <p className="text-sm text-slate-400 font-medium capitalize">Coach {session.instructor}</p>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <UsersIcon className="w-4 h-4" />
-                    {session.participants}
+
+                  <div className="hidden md:flex items-center gap-6 text-slate-400 text-sm">
+                    <div className="flex items-center gap-1.5 font-medium"><Clock className="w-4 h-4 text-slate-300" /><span>{new Date(session.scheduled_at).toLocaleDateString()}</span></div>
+                    <div className="flex items-center gap-1.5 font-medium"><UsersIcon className="w-4 h-4 text-slate-300" /><span>{pCount} Clients</span></div>
                   </div>
-                  <span className="text-foreground font-medium">{session.duration}</span>
+
+                  <div className="flex items-center gap-2 ml-4">
+                    <Button 
+                        variant="ghost" 
+                        className="text-[#0ea5e9] font-bold hover:bg-sky-50 hover:text-[#0ea5e9]" 
+                        onClick={() => window.open(session.meeting_link, '_blank')}
+                    >
+                        View
+                    </Button>
+                    <Button variant="ghost" size="icon" className="text-slate-300 hover:text-red-500 hover:bg-red-50" onClick={() => handleDelete(session.id)}><Trash2 className="w-4 h-4" /></Button>
+                  </div>
                 </div>
-                <Button variant="outline" size="sm">
-                  View
-                </Button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>
     </DashboardLayout>
+  );
+}
+
+function StatCard({ title, value, icon, bgColor }: any) {
+  return (
+    <Card className="border-none shadow-sm"><CardContent className="pt-6 flex items-center justify-between">
+      <div><p className="text-xs font-bold text-slate-400 uppercase tracking-tight mb-1">{title}</p><p className="text-3xl font-bold text-slate-800">{value}</p></div>
+      <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${bgColor}`}>{icon}</div>
+    </CardContent></Card>
   );
 }
