@@ -5,9 +5,10 @@ CREATE TYPE public.app_role AS ENUM ('admin', 'moderator', 'user');
 CREATE TABLE public.profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
-    email TEXT,
+    -- email TEXT,
     full_name TEXT,
     avatar_url TEXT,
+    date_of_birth DATE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
@@ -93,19 +94,20 @@ BEFORE UPDATE ON public.profiles
 FOR EACH ROW
 EXECUTE FUNCTION public.update_updated_at_column();
 
--- Function to create profile on user signup
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO public.profiles (user_id, email, full_name)
-    VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'full_name');
+-- Function to create Admin profile on signup
+
+-- CREATE OR REPLACE FUNCTION public.handle_new_user()
+-- RETURNS TRIGGER AS $$
+-- BEGIN
+--     INSERT INTO public.profiles (user_id, email, full_name)
+--     VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'full_name');
     
-    INSERT INTO public.user_roles (user_id, role)
-    VALUES (NEW.id, 'user');
+--     INSERT INTO public.user_roles (user_id, role)
+--     VALUES (NEW.id, 'user');
     
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+--     RETURN NEW;
+-- END;
+-- $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- Trigger to create profile when user signs up
 CREATE TRIGGER on_auth_user_created

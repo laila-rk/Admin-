@@ -19,28 +19,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+  
+    const checkUserRole = async (session: Session | null) => {
+      if (!session?.user) {
+        setSession(null);
+        setUser(null);
         setLoading(false);
+        return;
       }
-    );
+
+      const { data: profileData, error } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", session.user.id)
+        .single();
+
+      if (error || !profileData || profileData.role !== "admin") {
+        await supabase.auth.signOut();
+        setSession(null);
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      setSession(session);
+      setUser(session.user);
+      setLoading(false);
+    };
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setLoading(true);
+      await checkUserRole(session);
+    }); 
+
 
     // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      setLoading(true);
+      await checkUserRole(session);
     });
-
+    
     return () => subscription.unsubscribe();
   }, []);
+  
+  const signOut = async () => {
+    await supabase.auth.signOut();
+  };
 
   const signUp = async (email: string, password: string, fullName: string) => {
     const redirectUrl = `${window.location.origin}/`;
-    
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -48,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         emailRedirectTo: redirectUrl,
         data: {
           full_name: fullName,
+          signup_source: 'admin'
         },
       },
     });
@@ -56,17 +86,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data: AuthData, error: AuthError} = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-    
-    return { error: error as Error | null };
+
+    if(AuthError){
+      return {error: AuthError}
+    }
+    return { error: AuthError as Error | null };
   };
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-  };
 
   return (
     <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signOut }}>

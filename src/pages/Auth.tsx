@@ -12,6 +12,7 @@ import logo from "@/assets/logo.png";
 import { z } from "zod";
 import { lovable } from "@/integrations/lovable";
 import { Separator } from "@/components/ui/separator";
+import { supabase } from "@/integrations/supabase/client";
 
 const emailSchema = z.string().email("Please enter a valid email address");
 const passwordSchema = z.string().min(6, "Password must be at least 6 characters");
@@ -79,7 +80,6 @@ export default function Auth() {
     setIsLoading(true);
     
     const { error } = await signIn(loginEmail, loginPassword);
-    
     if (error) {
       let message = "An error occurred during login";
       if (error.message.includes("Invalid login credentials")) {
@@ -87,12 +87,17 @@ export default function Auth() {
       } else if (error.message.includes("Email not confirmed")) {
         message = "Please confirm your email address before logging in.";
       }
+      else{
+        message = 'You are not Authorized for Admin Dashboard'
+      }
+        toast({
+          title: "Login Failed",
+          description: message,
+          variant: "destructive",
+        });
       
-      toast({
-        title: "Login Failed",
-        description: message,
-        variant: "destructive",
-      });
+      setIsLoading(false);
+      return;
     } else {
       toast({
         title: "Welcome back!",
@@ -127,6 +132,7 @@ export default function Auth() {
     const { error } = await signUp(signupEmail, signupPassword, signupName);
     
     if (error) {
+      console.log(error);
       let message = "An error occurred during signup";
       if (error.message.includes("already registered")) {
         message = "This email is already registered. Please login instead.";
