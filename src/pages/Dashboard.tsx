@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { 
   Users, 
   TrendingUp, 
@@ -6,8 +7,10 @@ import {
   Activity,
   UserCheck,
   Clock,
-  BarChart3
+  BarChart3,
+  Loader2
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { StatCard } from "@/components/StatCard";
@@ -26,7 +29,7 @@ import {
   Legend
 } from "recharts";
 
-// Member growth data (last 6 months)
+// --- STATIC DATA (Charts) ---
 const memberGrowthData = [
   { month: "Aug", members: 2120, newSignups: 180 },
   { month: "Sep", members: 2340, newSignups: 220 },
@@ -36,7 +39,6 @@ const memberGrowthData = [
   { month: "Jan", members: 2847, newSignups: 137 },
 ];
 
-// Revenue data (last 6 months)
 const revenueData = [
   { month: "Aug", revenue: 38500, subscriptions: 28000, sessions: 10500 },
   { month: "Sep", revenue: 41200, subscriptions: 30200, sessions: 11000 },
@@ -46,21 +48,61 @@ const revenueData = [
   { month: "Jan", revenue: 48352, subscriptions: 35000, sessions: 13352 },
 ];
 
-const recentActivity = [
-  { id: 1, user: "Sarah Mitchell", action: "Completed workout session", time: "2 min ago", type: "fitness" },
-  { id: 2, user: "James Wilson", action: "Subscribed to Premium", time: "15 min ago", type: "subscription" },
-  { id: 3, user: "Coach Maria", action: "Added new HIIT class", time: "32 min ago", type: "session" },
-  { id: 4, user: "Tom Anderson", action: "Updated nutrition plan", time: "1 hour ago", type: "nutrition" },
-  { id: 5, user: "Emily Ross", action: "Achieved weight goal", time: "2 hours ago", type: "progress" },
-];
-
-const topTrainers = [
-  { id: 1, name: "Coach Maria", specialty: "HIIT & Cardio", members: 156, rating: 4.9 },
-  { id: 2, name: "Coach David", specialty: "Strength Training", members: 142, rating: 4.8 },
-  { id: 3, name: "Coach Elena", specialty: "Yoga & Wellness", members: 128, rating: 4.9 },
-];
-
 export default function Dashboard() {
+  const [sessionCount, setSessionCount] = useState<number>(0);
+  const [memberCount, setMemberCount] = useState<number>(0);
+  const [activities, setActivities] = useState<any[]>([]);
+  const [trainers, setTrainers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchDashboardData() {
+      try {
+        setLoading(true);
+
+        // 1. Fetch Counts
+        const [sessionsRes, profilesRes] = await Promise.all([
+          supabase.from("sessions").select("*", { count: "exact", head: true }),
+          supabase.from("profiles").select("*", { count: "exact", head: true })
+        ]);
+
+        setSessionCount(sessionsRes.count || 0);
+        setMemberCount(profilesRes.count || 0);
+
+        // 2. Fetch Recent Activity (Uses your admin_ prefixed columns)
+        const { data: activityData } = await supabase
+          .from("activities")
+          .select("admin_user_name, admin_action_detail, admin_created_at")
+          .order("admin_created_at", { ascending: false })
+          .limit(5);
+
+        setActivities(activityData || []);
+
+        // 3. Fetch Top Trainers (Join user_roles and profile_details)
+        const { data: trainerData } = await supabase
+          .from("user_roles")
+          .select(`
+            user_id,
+            profile_details:user_id (
+              first_name,
+              last_name
+            )
+          `)
+          .eq("role", "admin")
+          .limit(3);
+
+        setTrainers(trainerData || []);
+
+      } catch (err) {
+        console.error("Dashboard error:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchDashboardData();
+  }, []);
+
   return (
     <DashboardLayout>
       <PageHeader 
@@ -77,18 +119,20 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatCard
           title="Total Members"
-          value="2,847"
+          value={loading ? "..." : memberCount.toLocaleString()}
           change="+12.5% from last month"
           changeType="positive"
           icon={Users}
         />
+        
         <StatCard
           title="Active Sessions"
-          value="124"
-          change="23 live now"
+          value={loading ? "..." : sessionCount.toLocaleString()}
+          change="Live sessions"
           changeType="positive"
           icon={Activity}
         />
+
         <StatCard
           title="Revenue (MTD)"
           value="$48,352"
@@ -117,24 +161,26 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {recentActivity.map((activity) => (
+              {activities.length > 0 ? activities.map((activity, i) => (
                 <div 
-                  key={activity.id} 
+                  key={i} 
                   className="flex items-center gap-4 p-3 rounded-lg hover:bg-muted/50 transition-colors"
                 >
                   <div className="w-10 h-10 rounded-full gradient-accent flex items-center justify-center flex-shrink-0">
                     <Activity className="w-5 h-5 text-accent-foreground" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{activity.user}</p>
-                    <p className="text-sm text-muted-foreground truncate">{activity.action}</p>
+                    <p className="text-sm font-medium text-foreground truncate">{activity.admin_user_name}</p>
+                    <p className="text-sm text-muted-foreground truncate">{activity.admin_action_detail}</p>
                   </div>
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
                     <Clock className="w-3 h-3" />
-                    {activity.time}
+                    {new Date(activity.admin_created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </div>
-              ))}
+              )) : (
+                <p className="text-center text-sm text-muted-foreground py-4">No recent activity found.</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -149,31 +195,29 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {topTrainers.map((trainer, index) => (
+              {trainers.length > 0 ? trainers.map((t, index) => (
                 <div 
-                  key={trainer.id} 
+                  key={index} 
                   className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors"
                 >
                   <div className="relative">
-                    <div className="w-10 h-10 rounded-full gradient-primary flex items-center justify-center">
-                      <span className="text-sm font-bold text-primary-foreground">
-                        {trainer.name.split(' ')[1][0]}
-                      </span>
+                    <div className="w-10 h-10 rounded-full gradient-primary flex items-center justify-center text-white font-bold">
+                      {t.profile_details?.first_name?.[0] || "T"}
                     </div>
                     <span className="absolute -top-1 -right-1 w-5 h-5 bg-accent text-accent-foreground text-xs font-bold rounded-full flex items-center justify-center">
                       {index + 1}
                     </span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{trainer.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{trainer.specialty}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-foreground">{trainer.members}</p>
-                    <p className="text-xs text-muted-foreground">members</p>
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {t.profile_details?.first_name} {t.profile_details?.last_name}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">Professional Staff</p>
                   </div>
                 </div>
-              ))}
+              )) : (
+                <p className="text-center text-sm text-muted-foreground py-4">No trainers listed.</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -181,6 +225,7 @@ export default function Dashboard() {
 
       {/* Analytics Overview */}
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Charts remain the same as your static request */}
         <Card className="shadow-card animate-slide-up">
           <CardHeader>
             <CardTitle className="font-display flex items-center gap-2">
@@ -197,47 +242,19 @@ export default function Dashboard() {
                       <stop offset="5%" stopColor="hsl(var(--accent))" stopOpacity={0.3} />
                       <stop offset="95%" stopColor="hsl(var(--accent))" stopOpacity={0} />
                     </linearGradient>
-                    <linearGradient id="signupGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                    </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis 
-                    dataKey="month" 
-                    className="text-xs fill-muted-foreground"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  />
-                  <YAxis 
-                    className="text-xs fill-muted-foreground"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  />
+                  <XAxis dataKey="month" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
+                  <YAxis tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
                   <Tooltip 
                     contentStyle={{ 
                       backgroundColor: 'hsl(var(--card))', 
                       border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                      borderRadius: '8px'
                     }}
-                    labelStyle={{ color: 'hsl(var(--foreground))' }}
                   />
                   <Legend />
-                  <Area 
-                    type="monotone" 
-                    dataKey="members" 
-                    name="Total Members"
-                    stroke="hsl(var(--accent))" 
-                    fill="url(#memberGradient)"
-                    strokeWidth={2}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="newSignups" 
-                    name="New Signups"
-                    stroke="hsl(var(--primary))" 
-                    fill="url(#signupGradient)"
-                    strokeWidth={2}
-                  />
+                  <Area type="monotone" dataKey="members" stroke="hsl(var(--accent))" fill="url(#memberGradient)" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -256,39 +273,22 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={revenueData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis 
-                    dataKey="month" 
-                    className="text-xs fill-muted-foreground"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  />
+                  <XAxis dataKey="month" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
                   <YAxis 
-                    className="text-xs fill-muted-foreground"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                     tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
                   />
                   <Tooltip 
-                    contentStyle={{ 
+                     contentStyle={{ 
                       backgroundColor: 'hsl(var(--card))', 
                       border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                      borderRadius: '8px'
                     }}
-                    labelStyle={{ color: 'hsl(var(--foreground))' }}
                     formatter={(value: number) => [`$${value.toLocaleString()}`, '']}
                   />
                   <Legend />
-                  <Bar 
-                    dataKey="subscriptions" 
-                    name="Subscriptions"
-                    fill="hsl(var(--accent))" 
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Bar 
-                    dataKey="sessions" 
-                    name="Sessions"
-                    fill="hsl(var(--primary))" 
-                    radius={[4, 4, 0, 0]}
-                  />
+                  <Bar dataKey="subscriptions" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="sessions" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

@@ -28,7 +28,6 @@ export default function Sessions() {
   const [clients, setClients] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isBypassActive, setIsBypassActive] = useState(false);
   
   const [formData, setFormData] = useState({
     title: "",
@@ -62,22 +61,34 @@ export default function Sessions() {
 
   useEffect(() => { 
     const getProfile = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from("profiles").select("full_name").eq("id", user.id).single();
-        if (data?.full_name) setFormData(prev => ({ ...prev, trainer: data.full_name }));
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data, error } = await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", user.id)
+            .maybeSingle();
+            
+          if (error) {
+            console.error("Profile fetch error:", error.message);
+          } else if (data?.full_name) {
+            setFormData(prev => ({ ...prev, trainer: data.full_name }));
+          }
+        }
+      } catch (err) {
+        console.error("Auth error:", err);
       }
     };
     getProfile();
     fetchData(); 
   }, []);
 
-  // --- GOOGLE MEET GENERATION  ---
+  // --- GOOGLE MEET GENERATION ---
   const generateMeetLink = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       const toastId = toast.loading("Generating Google Meet link...");
       try {
-        // Prepare Start and End times 
         const startDateTime = `${formData.date}T${formData.time}:00Z`;
         const endDate = new Date(`${formData.date}T${formData.time}:00Z`);
         endDate.setHours(endDate.getHours() + 1);
@@ -119,7 +130,6 @@ export default function Sessions() {
         toast.error("Check your internet or Google Console settings.", { id: toastId });
       }
     },
-    //'event' write and 'calendar' read/write scopes
     scope: 'https://www.googleapis.com/auth/calendar.events',
   });
 
@@ -142,6 +152,7 @@ export default function Sessions() {
   const handleAddSession = async () => {
     if (!formData.link || !formData.title) return toast.error("Title and Link are required");
 
+    // 1. Insert Session
     const { data: newSession, error: sessErr } = await supabase.from("sessions").insert([{
       title: formData.title,
       instructor: formData.trainer || "Coach",
@@ -155,6 +166,7 @@ export default function Sessions() {
 
     if (sessErr) return toast.error(sessErr.message);
 
+    // 2. Insert Assignments
     if (!formData.isMass && formData.selectedClientIds.length > 0) {
       const assignments = formData.selectedClientIds.map(cid => ({ 
         session_id: newSession.id, 
@@ -163,9 +175,16 @@ export default function Sessions() {
       await supabase.from("session_assignments").insert(assignments);
     }
 
+    // 3. UPDATE: Log Activity for Dashboard Feed
+    await supabase.from("activities").insert([{
+      admin_user_name: formData.trainer || "Coach",
+      admin_action_detail: `Scheduled ${formData.type} session: ${formData.title}`,
+      admin_activity_type: formData.type === 'recorded' ? 'video' : 'session',
+      admin_created_at: new Date().toISOString()
+    }]);
+
     toast.success(`${formData.type === 'recorded' ? 'Recorded video' : 'Live session'} added!`);
     setIsModalOpen(false);
-    setIsBypassActive(false);
     setFormData(prev => ({
       ...prev,
       title: "", link: "", type: "live", isMass: true, selectedClientIds: []
@@ -173,11 +192,25 @@ export default function Sessions() {
     fetchData();
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this session?")) return;
+  const handleDelete = async (id: string, title: string, trainer: string) => {
+    if (!confirm(`Are you sure you want to delete "${title}"?`)) return;
+    
     const { error } = await supabase.from("sessions").delete().eq("id", id);
-    if (error) toast.error(error.message);
-    else fetchData();
+    
+    if (error) {
+      toast.error(error.message);
+    } else {
+      // UPDATE: Log deletion activity for Dashboard Feed
+      await supabase.from("activities").insert([{
+        admin_user_name: trainer || "Coach",
+        admin_action_detail: `Deleted session: ${title}`,
+        admin_activity_type: "deletion",
+        admin_created_at: new Date().toISOString()
+      }]);
+      
+      toast.success("Session deleted successfully");
+      fetchData();
+    }
   };
 
   return (
@@ -192,7 +225,6 @@ export default function Sessions() {
           <DialogContent className="sm:max-w-[550px] max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle className="text-slate-800">Schedule New Session</DialogTitle></DialogHeader>
             <div className="grid gap-4 py-2">
-              
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label className="text-slate-600">Session Type</Label>
@@ -228,7 +260,6 @@ export default function Sessions() {
                 </div>
               </div>
 
-              {/* Assignment Mode */}
               <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-lg">
                 <Label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Assignment Mode</Label>
                 <div className="flex items-center gap-2">
@@ -271,7 +302,6 @@ export default function Sessions() {
                 <div className="grid gap-2">
                   <div className="flex items-center justify-between">
                     <Label className="text-slate-600">Video Link</Label>
-                    {/* The Generator Button */}
                     <Button 
                       type="button"
                       variant="ghost" 
@@ -299,21 +329,19 @@ export default function Sessions() {
         </Dialog>
       </PageHeader>
 
-      {/* STATS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <StatCard title="Live Now" value={sessions.filter(s => getLiveStatus(s.scheduled_at) && s.type !== 'recorded').length} icon={<Video className="text-[#0ea5e9]" />} bgColor="bg-sky-50" />
         <StatCard title="Total Workouts" value={sessions.length} icon={<CalendarIcon className="text-[#0ea5e9]" />} bgColor="bg-sky-50" />
         <StatCard title="Active Clients" value={clients.length} icon={<UsersIcon className="text-slate-400" />} bgColor="bg-slate-50" />
       </div>
 
-      {/* SCHEDULE TABLE */}
       <Card className="border-none shadow-sm">
         <CardHeader><CardTitle className="text-xl font-bold text-slate-800">Session Management</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-3">
             {loading ? <p className="text-center py-4 text-slate-400">Syncing with database...</p> : 
-             sessions.length === 0 ? <p className="text-center py-4 text-slate-400">No sessions found.</p> :
-             sessions.map((session) => {
+              sessions.length === 0 ? <p className="text-center py-4 text-slate-400">No sessions found.</p> :
+              sessions.map((session) => {
               const live = getLiveStatus(session.scheduled_at) && session.type !== 'recorded';
               const pCount = session.admin_is_mass ? clients.length : (session.session_assignments?.[0]?.count || 0);
               const isRecorded = session.type === 'recorded';
@@ -348,7 +376,14 @@ export default function Sessions() {
                     >
                         View
                     </Button>
-                    <Button variant="ghost" size="icon" className="text-slate-300 hover:text-red-500 hover:bg-red-50" onClick={() => handleDelete(session.id)}><Trash2 className="w-4 h-4" /></Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="text-slate-300 hover:text-red-500 hover:bg-red-50" 
+                      onClick={() => handleDelete(session.id, session.title, session.instructor)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
                 </div>
               );
