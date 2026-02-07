@@ -20,45 +20,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
   
-    const checkUserRole = async (session: Session | null) => {
-      if (!session?.user) {
-        setSession(null);
-        setUser(null);
-        setLoading(false);
-        return;
-      }
+    // const checkUserRole = async (session: Session | null) => {
+    //   if (!session?.user) {
+    //     setSession(null);
+    //     setUser(null);
+    //     setLoading(false);
+    //     return;
+    //   }
 
-      const { data: profileData, error } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", session.user.id)
-        .single();
+    //   const { data: profileData, error } = await supabase
+    //     .from("user_roles")
+    //     .select("role")
+    //     .eq("user_id", session.user.id)
+    //     .single();
 
-      if (error || !profileData || profileData.role !== "admin") {
-        await supabase.auth.signOut();
-        setSession(null);
-        setUser(null);
-        setLoading(false);
-        return;
-      }
+    //   if (error || !profileData || profileData.role !== "admin") {
+    //     await supabase.auth.signOut();
+    //     setSession(null);
+    //     setUser(null);
+    //     setLoading(false);
+    //     return;
+    //   }
 
-      setSession(session);
-      setUser(session.user);
-      setLoading(false);
-    };
+    //   setSession(session);
+    //   setUser(session.user);
+    //   setLoading(false);
+    // };
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setLoading(true);
-      await checkUserRole(session);
-    }); 
+     const {
+       data: { subscription },
+     } = supabase.auth.onAuthStateChange((event, session) => {
+       setSession(session);
+       setUser(session?.user ?? null);
+       setLoading(false);
+     }); 
 
 
     // THEN check for existing session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setLoading(true);
-      await checkUserRole(session);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
     });
     
     return () => subscription.unsubscribe();
@@ -86,17 +88,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    const { data: AuthData, error: AuthError} = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { data: AuthData, error: AuthError } =
+      await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if(AuthError){
-      return {error: AuthError}
+    if (AuthError) {
+      return { error: AuthError };
     }
+
+    const { data: profileData, error: RoleError } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", AuthData.user.id)
+      .maybeSingle();
+
+    if (RoleError) {
+      await supabase.auth.signOut();
+      return { error: RoleError };
+    }
+
+    // console.log(profileData);
+
+    if (!profileData || profileData.role !== "admin") {
+      await supabase.auth.signOut();
+      return {
+        error: { message: "You are not authorized for this role" } as Error,
+      };
+    }
+
     return { error: AuthError as Error | null };
   };
-
 
   return (
     <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signOut }}>
