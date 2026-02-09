@@ -52,7 +52,7 @@ export default function Dashboard() {
   const [sessionCount, setSessionCount] = useState<number>(0);
   const [memberCount, setMemberCount] = useState<number>(0);
   const [activities, setActivities] = useState<any[]>([]);
-  const [trainers, setTrainers] = useState<any[]>([]);
+  // const [trainers, setTrainers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -91,7 +91,7 @@ export default function Dashboard() {
           .eq("role", "admin")
           .limit(3);
 
-        setTrainers(trainerData || []);
+        // setTrainers(trainerData || []);
 
       } catch (err) {
         console.error("Dashboard error:", err);
@@ -150,7 +150,7 @@ export default function Dashboard() {
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Activity */}
         <Card className="lg:col-span-2 shadow-card animate-slide-up">
           <CardHeader className="flex flex-row items-center justify-between">
@@ -186,7 +186,7 @@ export default function Dashboard() {
         </Card>
 
         {/* Top Trainers */}
-        <Card className="shadow-card animate-slide-up">
+        {/* <Card className="shadow-card animate-slide-up">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="font-display">Top Trainers</CardTitle>
             <Button variant="ghost" size="sm" className="text-accent hover:text-accent/80">
@@ -220,7 +220,7 @@ export default function Dashboard() {
               )}
             </div>
           </CardContent>
-        </Card>
+        </Card> */}
       </div>
 
       {/* Analytics Overview */}

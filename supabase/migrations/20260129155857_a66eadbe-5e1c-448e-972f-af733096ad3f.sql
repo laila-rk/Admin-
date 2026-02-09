@@ -96,18 +96,18 @@ EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Function to create Admin profile on signup
 
--- CREATE OR REPLACE FUNCTION public.handle_new_user()
--- RETURNS TRIGGER AS $$
--- BEGIN
---     INSERT INTO public.profiles (user_id, email, full_name)
---     VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'full_name');
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.profiles (user_id, email, full_name)
+    VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'full_name');
     
---     INSERT INTO public.user_roles (user_id, role)
---     VALUES (NEW.id, 'user');
+    INSERT INTO public.user_roles (user_id, role)
+    VALUES (NEW.id, 'admin');
     
---     RETURN NEW;
--- END;
--- $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- Trigger to create profile when user signs up
 CREATE TRIGGER on_auth_user_created
