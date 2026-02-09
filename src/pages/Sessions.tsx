@@ -84,7 +84,7 @@ export default function Sessions() {
     fetchData(); 
   }, []);
 
-  // --- GOOGLE MEET GENERATION ---
+  //  GOOGLE MEET GENERATION 
   const generateMeetLink = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       const toastId = toast.loading("Generating Google Meet link...");
@@ -152,7 +152,7 @@ export default function Sessions() {
   const handleAddSession = async () => {
     if (!formData.link || !formData.title) return toast.error("Title and Link are required");
 
-    // 1. Insert Session
+    //  Insert Session
     const { data: newSession, error: sessErr } = await supabase.from("sessions").insert([{
       title: formData.title,
       instructor: formData.trainer || "Coach",
@@ -166,7 +166,7 @@ export default function Sessions() {
 
     if (sessErr) return toast.error(sessErr.message);
 
-    // 2. Insert Assignments
+    // Insert Assignments
     if (!formData.isMass && formData.selectedClientIds.length > 0) {
       const assignments = formData.selectedClientIds.map(cid => ({ 
         session_id: newSession.id, 
@@ -175,7 +175,7 @@ export default function Sessions() {
       await supabase.from("session_assignments").insert(assignments);
     }
 
-    // 3. UPDATE: Log Activity for Dashboard Feed
+    //Log Activity for Dashboard Feed
     await supabase.from("activities").insert([{
       admin_user_name: formData.trainer || "Coach",
       admin_action_detail: `Scheduled ${formData.type} session: ${formData.title}`,
@@ -200,7 +200,7 @@ export default function Sessions() {
     if (error) {
       toast.error(error.message);
     } else {
-      // UPDATE: Log deletion activity for Dashboard Feed
+      //  Log deletion activity for Dashboard Feed
       await supabase.from("activities").insert([{
         admin_user_name: trainer || "Coach",
         admin_action_detail: `Deleted session: ${title}`,
