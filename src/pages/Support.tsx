@@ -1,33 +1,98 @@
-import { HelpCircle, MessageCircle, Book, FileQuestion, Clock, CheckCircle, AlertCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { 
+  HelpCircle, MessageCircle, Book, FileQuestion, Clock, 
+  CheckCircle, AlertCircle, Plus, Trash2, ExternalLink, 
+  RefreshCw, MessageSquare, Eye 
+} from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-
-const supportTickets = [
-  { id: 1, subject: "Cannot access live session", user: "Sarah M.", status: "open", priority: "high", time: "2 hours ago" },
-  { id: 2, subject: "Billing question", user: "James W.", status: "in_progress", priority: "medium", time: "5 hours ago" },
-  { id: 3, subject: "App crashes on login", user: "Emily R.", status: "open", priority: "high", time: "1 day ago" },
-  { id: 4, subject: "Feature request: Meal reminders", user: "Tom A.", status: "resolved", priority: "low", time: "2 days ago" },
-];
-
-const helpResources = [
-  { title: "Getting Started Guide", views: 1245, icon: Book },
-  { title: "Trainer FAQ", views: 892, icon: FileQuestion },
-  { title: "Billing & Subscriptions", views: 654, icon: MessageCircle },
-  { title: "Technical Troubleshooting", views: 543, icon: HelpCircle },
-];
+import { Input } from "@/components/ui/input";
+import { supabase } from "@/lib/supabase";
 
 export default function Support() {
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [tutorials, setTutorials] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newVideo, setNewVideo] = useState({ title: "", url: "", duration: "" });
+
+ 
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // Fetch Tickets 
+      const { data: ticketData } = await supabase
+        .from("tickets")
+        .select("*")
+        .order("created_at", { ascending: false });
+      
+      // Fetch Tutorials 
+      const { data: tutorialData } = await supabase
+        .from("tutorials")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (ticketData) setTickets(ticketData);
+      if (tutorialData) setTutorials(tutorialData);
+    } catch (err) {
+      console.error("Sync Error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const updateStatus = async (id: string, newStatus: string) => {
+    const { error } = await supabase
+      .from("tickets")
+      .update({ status: newStatus })
+      .eq("id", id);
+    if (!error) fetchData();
+  };
+
+  const openWhatsApp = (ticket: any) => {
+    const adminPhone = "8637261676"; // Admin Phone Number
+    const text = encodeURIComponent(
+      ` *Admin Live Support*\n\n` +
+      `*From:* ${ticket.user_name}\n` +
+      `*Message:* ${ticket.message}\n` +
+      `*Status:* ${ticket.status.toUpperCase()}`
+    );
+    window.open(`https://wa.me/${adminPhone}?text=${text}`, "_blank");
+  };
+
+  const deleteTicket = async (id: string) => {
+    const { error } = await supabase.from("tickets").delete().eq("id", id);
+    if (!error) fetchData();
+  };
+
+  //  TUTORIAL 
+  const handleAddTutorial = async () => {
+    if (!newVideo.title || !newVideo.url) return;
+    const { error } = await supabase.from("tutorials").insert([newVideo]);
+    if (!error) {
+      setNewVideo({ title: "", url: "", duration: "" });
+      fetchData();
+    }
+  };
+
+  const handleDeleteTutorial = async (id: string) => {
+    const { error } = await supabase.from("tutorials").delete().eq("id", id);
+    if (!error) fetchData();
+  };
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "open":
         return <Badge variant="destructive">Open</Badge>;
       case "in_progress":
-        return <Badge className="bg-warning text-warning-foreground">In Progress</Badge>;
+        return <Badge className="bg-yellow-500 text-white border-none">Viewing</Badge>;
       case "resolved":
-        return <Badge className="bg-success text-success-foreground">Resolved</Badge>;
+        return <Badge className="bg-green-500 text-white border-none">Closed</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -36,113 +101,149 @@ export default function Support() {
   const getPriorityIcon = (priority: string) => {
     switch (priority) {
       case "high":
-        return <AlertCircle className="w-4 h-4 text-destructive" />;
+        return <AlertCircle className="w-5 h-5 text-destructive" />;
       case "medium":
-        return <Clock className="w-4 h-4 text-warning" />;
+        return <Clock className="w-5 h-5 text-yellow-500" />;
       case "low":
-        return <CheckCircle className="w-4 h-4 text-success" />;
+        return <CheckCircle className="w-5 h-5 text-green-500" />;
       default:
-        return null;
+        return <MessageCircle className="w-5 h-5 text-primary" />;
     }
   };
 
   return (
     <DashboardLayout>
       <PageHeader 
-        title="Support / Help" 
-        description="Manage support tickets and help resources."
+        title="Admin Support Dashboard" 
+        description="Monitor live user tickets and manage video tutorials."
       />
 
+      {/* --- DYNAMIC STATS SECTION --- */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
-        <Card className="shadow-card">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Open Tickets</p>
-                <p className="text-3xl font-bold text-foreground">23</p>
-              </div>
-              <div className="p-3 rounded-xl bg-destructive/10">
-                <AlertCircle className="w-6 h-6 text-destructive" />
-              </div>
+        <Card className="shadow-sm border-l-4 border-l-red-500">
+          <CardContent className="pt-6 flex justify-between items-center">
+            <div>
+              <p className="text-sm text-muted-foreground font-semibold">NEW TICKETS</p>
+              <p className="text-3xl font-bold">{tickets.filter(t => t.status === 'open').length}</p>
             </div>
+            <div className="p-3 rounded-xl bg-red-50 text-red-500"><AlertCircle /></div>
           </CardContent>
         </Card>
-        <Card className="shadow-card">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Avg. Response Time</p>
-                <p className="text-3xl font-bold text-foreground">2.4h</p>
-              </div>
-              <div className="p-3 rounded-xl bg-accent/10">
-                <Clock className="w-6 h-6 text-accent" />
-              </div>
+        <Card className="shadow-sm border-l-4 border-l-yellow-500">
+          <CardContent className="pt-6 flex justify-between items-center">
+            <div>
+              <p className="text-sm text-muted-foreground font-semibold">BEING VIEWED</p>
+              <p className="text-3xl font-bold">{tickets.filter(t => t.status === 'in_progress').length}</p>
             </div>
+            <div className="p-3 rounded-xl bg-yellow-50 text-yellow-500"><Eye /></div>
           </CardContent>
         </Card>
-        <Card className="shadow-card">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Resolved (Week)</p>
-                <p className="text-3xl font-bold text-foreground">47</p>
-              </div>
-              <div className="p-3 rounded-xl bg-success/10">
-                <CheckCircle className="w-6 h-6 text-success" />
-              </div>
+        <Card className="shadow-sm border-l-4 border-l-green-500">
+          <CardContent className="pt-6 flex justify-between items-center">
+            <div>
+              <p className="text-sm text-muted-foreground font-semibold">CLOSED / SOLVED</p>
+              <p className="text-3xl font-bold">{tickets.filter(t => t.status === 'resolved').length}</p>
             </div>
+            <div className="p-3 rounded-xl bg-green-50 text-green-500"><CheckCircle /></div>
           </CardContent>
         </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2 shadow-card animate-slide-up">
-          <CardHeader>
-            <CardTitle className="font-display">Recent Tickets</CardTitle>
+        
+        {/* --- DYNAMIC TICKETS SECTION (LEFT) --- */}
+        <Card className="lg:col-span-2 shadow-card">
+          <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
+            <CardTitle className="font-display">Live Support Tickets</CardTitle>
+            <Button variant="ghost" size="sm" onClick={fetchData} disabled={loading}>
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             <div className="space-y-4">
-              {supportTickets.map((ticket) => (
-                <div 
-                  key={ticket.id}
-                  className="flex items-center gap-4 p-4 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  {getPriorityIcon(ticket.priority)}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-foreground truncate">{ticket.subject}</p>
-                    <p className="text-sm text-muted-foreground">{ticket.user} • {ticket.time}</p>
+              {tickets.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground">No active tickets.</div>
+              ) : (
+                tickets.map((ticket) => (
+                  <div key={ticket.id} className="p-4 rounded-xl border bg-muted/10 space-y-3 hover:shadow-md transition-shadow">
+                    <div className="flex justify-between items-start">
+                      <div className="flex gap-3">
+                        {getPriorityIcon(ticket.priority || "high")}
+                        <div>
+                          <p className="font-bold text-foreground">{ticket.user_name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(ticket.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {getStatusBadge(ticket.status)}
+                      </div>
+                    </div>
+                    
+                    <div className="p-3 bg-background rounded-lg border text-sm italic">
+                      "{ticket.message}"
+                    </div>
+
+                    <div className="flex justify-between items-center pt-2">
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => updateStatus(ticket.id, "in_progress")}>View</Button>
+                        <Button variant="outline" size="sm" className="text-green-600" onClick={() => updateStatus(ticket.id, "resolved")}>Close</Button>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" size="icon" className="text-red-500" onClick={() => deleteTicket(ticket.id)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => openWhatsApp(ticket)}>
+                          <MessageSquare className="w-4 h-4 mr-2" /> Admin WP
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                  {getStatusBadge(ticket.status)}
-                  <Button variant="outline" size="sm">View</Button>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
 
-        <Card className="shadow-card animate-slide-up">
-          <CardHeader>
-            <CardTitle className="font-display">Help Resources</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {helpResources.map((resource) => (
-                <div 
-                  key={resource.title}
-                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
-                >
-                  <div className="p-2 rounded-lg bg-accent/10">
-                    <resource.icon className="w-5 h-5 text-accent" />
+        {/* --- TUTORIAL MANAGEMENT SECTION (RIGHT) --- */}
+        <div className="space-y-6">
+          <Card className="shadow-card border-primary/20 bg-primary/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold">Add New Tutorial</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input placeholder="Title" value={newVideo.title} onChange={e => setNewVideo({...newVideo, title: e.target.value})} />
+              <Input placeholder="URL" value={newVideo.url} onChange={e => setNewVideo({...newVideo, url: e.target.value})} />
+              <div className="flex gap-2">
+                <Input placeholder="Duration" value={newVideo.duration} onChange={e => setNewVideo({...newVideo, duration: e.target.value})} />
+                <Button onClick={handleAddTutorial} size="icon"><Plus className="w-4 h-4" /></Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-card">
+            <CardHeader><CardTitle className="font-display">Live Tutorials</CardTitle></CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {tutorials.map((video) => (
+                  <div key={video.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/20 group">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Book className="w-4 h-4 text-primary" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{video.title}</p>
+                        <p className="text-xs text-muted-foreground">{video.duration} • {video.views || 0} views</p>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleDeleteTutorial(video.id)}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-foreground text-sm">{resource.title}</p>
-                    <p className="text-xs text-muted-foreground">{resource.views.toLocaleString()} views</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </DashboardLayout>
   );
