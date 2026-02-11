@@ -29,13 +29,15 @@ export default function Sessions() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   
+  const today = new Date().toISOString().split('T')[0];
+
   const [formData, setFormData] = useState({
     title: "",
     trainer: "",
     platform: "zoom",
     type: "live", 
     link: "",
-    date: new Date().toISOString().split('T')[0],
+    date: today,
     time: "10:00",
     isMass: true,
     selectedClientIds: [] as string[]
@@ -84,7 +86,6 @@ export default function Sessions() {
     fetchData(); 
   }, []);
 
-  //  GOOGLE MEET GENERATION 
   const generateMeetLink = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       const toastId = toast.loading("Generating Google Meet link...");
@@ -123,11 +124,10 @@ export default function Sessions() {
           setFormData(prev => ({ ...prev, link: data.hangoutLink, platform: 'google_meet' }));
           toast.success("Google Meet link ready!", { id: toastId });
         } else {
-          console.error("Google API Response:", data);
-          toast.error("Google rejected the request. Check your Client ID settings.", { id: toastId });
+          toast.error("Google rejected the request.", { id: toastId });
         }
       } catch (error) {
-        toast.error("Check your internet or Google Console settings.", { id: toastId });
+        toast.error("Generation failed.", { id: toastId });
       }
     },
     scope: 'https://www.googleapis.com/auth/calendar.events',
@@ -152,21 +152,32 @@ export default function Sessions() {
   const handleAddSession = async () => {
     if (!formData.link || !formData.title) return toast.error("Title and Link are required");
 
-    //  Insert Session
+    //  TRAINER NAME VALIDATION (NO NUMBERS) 
+    const nameRegex = /^[a-zA-Z\s]*$/;
+    if (!nameRegex.test(formData.trainer)) {
+      return toast.error("Trainer name should only contain letters.");
+    }
+
+    //  PAST DATE VALIDATION 
+    const scheduledDateTime = new Date(`${formData.date}T${formData.time}:00`);
+    const now = new Date();
+    if (scheduledDateTime < now) {
+      return toast.error("Cannot schedule a session in the past.");
+    }
+
     const { data: newSession, error: sessErr } = await supabase.from("sessions").insert([{
       title: formData.title,
       instructor: formData.trainer || "Coach",
       platform: formData.platform,
       type: formData.type, 
       meeting_link: formData.link,
-      scheduled_at: `${formData.date}T${formData.time}:00`,
+      scheduled_at: scheduledDateTime.toISOString(),
       admin_is_mass: formData.isMass,
       admin_status: "upcoming"
     }]).select().single();
 
     if (sessErr) return toast.error(sessErr.message);
 
-    // Insert Assignments
     if (!formData.isMass && formData.selectedClientIds.length > 0) {
       const assignments = formData.selectedClientIds.map(cid => ({ 
         session_id: newSession.id, 
@@ -175,7 +186,6 @@ export default function Sessions() {
       await supabase.from("session_assignments").insert(assignments);
     }
 
-    //Log Activity for Dashboard Feed
     await supabase.from("activities").insert([{
       admin_user_name: formData.trainer || "Coach",
       admin_action_detail: `Scheduled ${formData.type} session: ${formData.title}`,
@@ -183,32 +193,26 @@ export default function Sessions() {
       admin_created_at: new Date().toISOString()
     }]);
 
-    toast.success(`${formData.type === 'recorded' ? 'Recorded video' : 'Live session'} added!`);
+    toast.success("Session added!");
     setIsModalOpen(false);
     setFormData(prev => ({
       ...prev,
-      title: "", link: "", type: "live", isMass: true, selectedClientIds: []
+      title: "", link: "", type: "live", isMass: true, selectedClientIds: [], date: today
     }));
     fetchData();
   };
 
   const handleDelete = async (id: string, title: string, trainer: string) => {
-    if (!confirm(`Are you sure you want to delete "${title}"?`)) return;
-    
+    if (!confirm(`Are you sure?`)) return;
     const { error } = await supabase.from("sessions").delete().eq("id", id);
-    
-    if (error) {
-      toast.error(error.message);
-    } else {
-      //  Log deletion activity for Dashboard Feed
+    if (!error) {
       await supabase.from("activities").insert([{
         admin_user_name: trainer || "Coach",
         admin_action_detail: `Deleted session: ${title}`,
         admin_activity_type: "deletion",
         admin_created_at: new Date().toISOString()
       }]);
-      
-      toast.success("Session deleted successfully");
+      toast.success("Deleted");
       fetchData();
     }
   };
@@ -240,7 +244,14 @@ export default function Sessions() {
                 </div>
                 <div className="grid gap-2">
                   <Label className="text-slate-600">Trainer / Coach</Label>
-                  <Input value={formData.trainer} className="border-slate-200" onChange={(e) => setFormData({...formData, trainer: e.target.value})} />
+                  <Input 
+                    value={formData.trainer} 
+                    className="border-slate-200" 
+                    placeholder="name "
+                    // HTML level validation
+                    pattern="[a-zA-Z\s]*"
+                    onChange={(e) => setFormData({...formData, trainer: e.target.value})} 
+                  />
                 </div>
               </div>
 
@@ -252,7 +263,13 @@ export default function Sessions() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label className="text-slate-600">Date</Label>
-                  <Input type="date" className="border-slate-200" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
+                  <Input 
+                    type="date" 
+                    min={today}
+                    className="border-slate-200" 
+                    value={formData.date} 
+                    onChange={(e) => setFormData({...formData, date: e.target.value})} 
+                  />
                 </div>
                 <div className="grid gap-2">
                   <Label className="text-slate-600">Time</Label>
@@ -329,6 +346,7 @@ export default function Sessions() {
         </Dialog>
       </PageHeader>
 
+      {/* Main content grid and stat cards continue here... */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <StatCard title="Live Now" value={sessions.filter(s => getLiveStatus(s.scheduled_at) && s.type !== 'recorded').length} icon={<Video className="text-[#0ea5e9]" />} bgColor="bg-sky-50" />
         <StatCard title="Total Workouts" value={sessions.length} icon={<CalendarIcon className="text-[#0ea5e9]" />} bgColor="bg-sky-50" />
@@ -339,49 +357,26 @@ export default function Sessions() {
         <CardHeader><CardTitle className="text-xl font-bold text-slate-800">Session Management</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {loading ? <p className="text-center py-4 text-slate-400">Syncing with database...</p> : 
-              sessions.length === 0 ? <p className="text-center py-4 text-slate-400">No sessions found.</p> :
+            {loading ? <p className="text-center py-4 text-slate-400">Syncing...</p> : 
+              sessions.length === 0 ? <p className="text-center py-4 text-slate-400">No sessions.</p> :
               sessions.map((session) => {
               const live = getLiveStatus(session.scheduled_at) && session.type !== 'recorded';
               const pCount = session.admin_is_mass ? clients.length : (session.session_assignments?.[0]?.count || 0);
-              const isRecorded = session.type === 'recorded';
-
               return (
                 <div key={session.id} className="group flex items-center gap-4 p-5 rounded-2xl border border-slate-100 hover:border-sky-100 hover:bg-sky-50/30 transition-all">
-                  <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white shadow-sm ${live ? 'bg-[#0ea5e9] animate-pulse' : isRecorded ? 'bg-slate-800' : 'bg-slate-200'}`}>
-                    {isRecorded ? <Film className="w-6 h-6" /> : session.platform === 'whatsapp' ? <MessageCircle className="w-6 h-6" /> : <PlayCircle className="w-6 h-6 text-slate-400" />}
+                  <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white shadow-sm ${live ? 'bg-[#0ea5e9] animate-pulse' : 'bg-slate-200'}`}>
+                    {session.type === 'recorded' ? <Film className="w-6 h-6" /> : <PlayCircle className="w-6 h-6 text-slate-400" />}
                   </div>
-                  
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <h4 className="font-semibold text-slate-800">{session.title}</h4>
-                      <Badge variant="secondary" className="bg-slate-100 text-slate-600 text-[10px] uppercase border-none font-bold">
-                        {session.platform === 'google_meet' ? 'Google Meet' : session.platform}
-                      </Badge>
                       {live && <Badge className="bg-[#0ea5e9] text-white text-[10px] uppercase font-bold">LIVE</Badge>}
                     </div>
                     <p className="text-sm text-slate-400 font-medium capitalize">Coach {session.instructor}</p>
                   </div>
-
-                  <div className="hidden md:flex items-center gap-6 text-slate-400 text-sm">
-                    <div className="flex items-center gap-1.5 font-medium"><Clock className="w-4 h-4 text-slate-300" /><span>{new Date(session.scheduled_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>
-                    <div className="flex items-center gap-1.5 font-medium"><UsersIcon className="w-4 h-4 text-slate-300" /><span>{pCount} Clients</span></div>
-                  </div>
-
                   <div className="flex items-center gap-2 ml-4">
-                    <Button 
-                        variant="ghost" 
-                        className="text-[#0ea5e9] font-bold hover:bg-sky-50" 
-                        onClick={() => window.open(session.meeting_link, '_blank')}
-                    >
-                        View
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="text-slate-300 hover:text-red-500 hover:bg-red-50" 
-                      onClick={() => handleDelete(session.id, session.title, session.instructor)}
-                    >
+                    <Button variant="ghost" className="text-[#0ea5e9] font-bold hover:bg-sky-50" onClick={() => window.open(session.meeting_link, '_blank')}>View</Button>
+                    <Button variant="ghost" size="icon" className="text-slate-300 hover:text-red-500 hover:bg-red-50" onClick={() => handleDelete(session.id, session.title, session.instructor)}>
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
