@@ -152,15 +152,20 @@ export default function Sessions() {
   const handleAddSession = async () => {
     if (!formData.link || !formData.title) return toast.error("Title and Link are required");
 
-    //  TRAINER NAME VALIDATION (NO NUMBERS) 
-    const nameRegex = /^[a-zA-Z\s]*$/;
-    if (!nameRegex.test(formData.trainer)) {
-      return toast.error("Trainer name should only contain letters.");
+    const alphaRegex = /[a-zA-Z]/;
+    const nameOnlyRegex = /^[a-zA-Z\s.-]*$/;
+
+    if (!nameOnlyRegex.test(formData.trainer) || !alphaRegex.test(formData.trainer)) {
+      return toast.error("Trainer name must contain letters and no numbers/special symbols.");
     }
 
-    //  PAST DATE VALIDATION 
+    if (!alphaRegex.test(formData.title)) {
+      return toast.error("Session Title must contain letters (cannot be only numbers/symbols).");
+    }
+
     const scheduledDateTime = new Date(`${formData.date}T${formData.time}:00`);
     const now = new Date();
+    
     if (scheduledDateTime < now) {
       return toast.error("Cannot schedule a session in the past.");
     }
@@ -195,10 +200,10 @@ export default function Sessions() {
 
     toast.success("Session added!");
     setIsModalOpen(false);
-    setFormData(prev => ({
-      ...prev,
-      title: "", link: "", type: "live", isMass: true, selectedClientIds: [], date: today
-    }));
+    setFormData({
+      title: "", trainer: formData.trainer, platform: "zoom", type: "live", link: "",
+      date: today, time: "10:00", isMass: true, selectedClientIds: []
+    });
     fetchData();
   };
 
@@ -247,9 +252,8 @@ export default function Sessions() {
                   <Input 
                     value={formData.trainer} 
                     className="border-slate-200" 
-                    placeholder="name "
-                    // HTML level validation
-                    pattern="[a-zA-Z\s]*"
+                    placeholder="Coach name"
+                    onKeyPress={(e) => { if (/[0-9]/.test(e.key)) e.preventDefault(); }}
                     onChange={(e) => setFormData({...formData, trainer: e.target.value})} 
                   />
                 </div>
@@ -257,7 +261,12 @@ export default function Sessions() {
 
               <div className="grid gap-2">
                 <Label className="text-slate-600">Session Title</Label>
-                <Input value={formData.title} className="border-slate-200" onChange={(e) => setFormData({...formData, title: e.target.value})} />
+                <Input 
+                  value={formData.title} 
+                  className="border-slate-200" 
+                  placeholder="e.g. Morning Cardio"
+                  onChange={(e) => setFormData({...formData, title: e.target.value})} 
+                />
               </div>
               
               <div className="grid grid-cols-2 gap-4">
@@ -346,7 +355,6 @@ export default function Sessions() {
         </Dialog>
       </PageHeader>
 
-      {/* Main content grid and stat cards continue here... */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <StatCard title="Live Now" value={sessions.filter(s => getLiveStatus(s.scheduled_at) && s.type !== 'recorded').length} icon={<Video className="text-[#0ea5e9]" />} bgColor="bg-sky-50" />
         <StatCard title="Total Workouts" value={sessions.length} icon={<CalendarIcon className="text-[#0ea5e9]" />} bgColor="bg-sky-50" />
@@ -361,12 +369,25 @@ export default function Sessions() {
               sessions.length === 0 ? <p className="text-center py-4 text-slate-400">No sessions.</p> :
               sessions.map((session) => {
               const live = getLiveStatus(session.scheduled_at) && session.type !== 'recorded';
-              const pCount = session.admin_is_mass ? clients.length : (session.session_assignments?.[0]?.count || 0);
+              
+              
+              const participantCount = session.admin_is_mass 
+                ? clients.length 
+                : (session.session_assignments?.[0]?.count || 0);
+
+              
+              const sessionTime = new Date(session.scheduled_at).toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: false 
+              });
+
               return (
                 <div key={session.id} className="group flex items-center gap-4 p-5 rounded-2xl border border-slate-100 hover:border-sky-100 hover:bg-sky-50/30 transition-all">
                   <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white shadow-sm ${live ? 'bg-[#0ea5e9] animate-pulse' : 'bg-slate-200'}`}>
                     {session.type === 'recorded' ? <Film className="w-6 h-6" /> : <PlayCircle className="w-6 h-6 text-slate-400" />}
                   </div>
+                  
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <h4 className="font-semibold text-slate-800">{session.title}</h4>
@@ -374,6 +395,20 @@ export default function Sessions() {
                     </div>
                     <p className="text-sm text-slate-400 font-medium capitalize">Coach {session.instructor}</p>
                   </div>
+
+                  {/* FIXED: Time and Client Count UI Section */}
+                  <div className="hidden md:flex items-center gap-6 mr-4">
+                    <div className="flex items-center gap-2 text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
+                      <Clock className="w-4 h-4 text-[#0ea5e9]" />
+                      <span className="text-sm font-bold">{sessionTime}</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 min-w-[110px]">
+                      <UsersIcon className="w-4 h-4 text-slate-400" />
+                      <span className="text-sm font-semibold">{participantCount} Clients</span>
+                    </div>
+                  </div>
+
                   <div className="flex items-center gap-2 ml-4">
                     <Button variant="ghost" className="text-[#0ea5e9] font-bold hover:bg-sky-50" onClick={() => window.open(session.meeting_link, '_blank')}>View</Button>
                     <Button variant="ghost" size="icon" className="text-slate-300 hover:text-red-500 hover:bg-red-50" onClick={() => handleDelete(session.id, session.title, session.instructor)}>
