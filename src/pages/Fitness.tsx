@@ -19,19 +19,28 @@ export default function Fitness() {
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState("All");
   const { toast } = useToast();
+  const stats = useMemo(() => {
+    const total = exercises.length;
+    const uniqueMovements = new Set(exercises.map((ex) => ex.name)).size;
 
-  const [stats, setStats] = useState({
-    totalCount: 0,
-    uniqueMovements: 0, 
-    avgSets: 0,
-    totalRepVolume: "0",
-  });
+    const avgSets = total > 0
+      ? exercises.reduce((acc, curr) => acc + (Number(curr.sets) || 0), 0) / total
+      : 0;
+
+    const totalVol = exercises.reduce((acc, curr) =>
+      acc + (Number(curr.sets) || 0) * (Number(curr.reps) || 0), 0);
+
+    return {
+      totalCount: total,
+      uniqueMovements: uniqueMovements,
+      avgSets: Math.round(avgSets * 10) / 10,
+      totalRepVolume: totalVol.toLocaleString(),
+    };
+  }, [exercises]);
 
   const fetchFitnessData = async () => {
     try {
       setLoading(true);
-      
-      // Fetching From 'exercises' 
       const { data, error } = await supabase
         .from("exercises")
         .select("*")
@@ -42,28 +51,9 @@ export default function Fitness() {
         throw error;
       }
 
-      console.log("Fetched Data:", data);
-
       if (data) {
         setExercises(data);
-        const total = data.length;
-
-        // Stats calculation based on actual column name, sets, reps
-        const uniqueMovements = new Set(data.map(ex => ex.name)).size;
         
-        const avgSets = total > 0 
-          ? data.reduce((acc, curr) => acc + (Number(curr.sets) || 0), 0) / total 
-          : 0;
-
-        const totalVol = data.reduce((acc, curr) => 
-          acc + ((Number(curr.sets) || 0) * (Number(curr.reps) || 0)), 0);
-
-        setStats({
-          totalCount: total,
-          uniqueMovements: uniqueMovements,
-          avgSets: Math.round(avgSets * 10) / 10,
-          totalRepVolume: totalVol.toLocaleString(),
-        });
       }
     } catch (error: any) {
       toast({ variant: "destructive", title: "Fetch Error", description: error.message });
@@ -77,23 +67,28 @@ export default function Fitness() {
   }, []);
 
   const filteredExercises = useMemo(() => {
-    return activeFilter === "All" 
-      ? exercises 
-      : exercises.filter(ex => ex.category === activeFilter);
+    return activeFilter === "All"
+      ? exercises
+      : exercises.filter((ex) => ex.category === activeFilter);
   }, [exercises, activeFilter]);
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Are you sure?")) return;
+
     const { error } = await supabase.from("exercises").delete().eq("id", id);
+
     if (!error) {
-      setExercises(prev => prev.filter(ex => ex.id !== id));
+      
+      setExercises((prev) => prev.filter((ex) => ex.id !== id));
       toast({ title: "Deleted" });
+    } else {
+      toast({ variant: "destructive", title: "Delete Failed", description: error.message });
     }
   };
 
-  const categories = ["Strength", "Cardio", "HIIT", "Yoga", "Pilates"].map(cat => ({
+  const categories = ["Strength", "Cardio", "HIIT", "Yoga", "Pilates"].map((cat) => ({
     name: cat,
-    count: exercises.filter(ex => ex.category === cat).length
+    count: exercises.filter((ex) => ex.category === cat).length,
   }));
 
   if (loading) return (
@@ -106,8 +101,8 @@ export default function Fitness() {
 
   return (
     <DashboardLayout>
-      <PageHeader 
-        title="Fitness Overview" 
+      <PageHeader
+        title="Fitness Overview"
         description="Monitor system-wide exercise statistics."
       >
         <DropdownMenu>
@@ -120,7 +115,7 @@ export default function Fitness() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onClick={() => setActiveFilter("All")}>All Categories</DropdownMenuItem>
-            {["Strength", "Cardio", "HIIT", "Yoga", "Pilates"].map(cat => (
+            {["Strength", "Cardio", "HIIT", "Yoga", "Pilates"].map((cat) => (
               <DropdownMenuItem key={cat} onClick={() => setActiveFilter(cat)}>
                 {cat}
               </DropdownMenuItem>
@@ -183,9 +178,9 @@ export default function Fitness() {
                       <p className="font-bold text-accent">{ex.reps} reps</p>
                       <p className="text-xs text-muted-foreground">Total: {ex.sets * ex.reps}</p>
                     </div>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => handleDelete(ex.id)}
                       className="text-muted-foreground hover:text-destructive"
                     >
