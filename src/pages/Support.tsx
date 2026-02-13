@@ -18,17 +18,14 @@ export default function Support() {
   const [loading, setLoading] = useState(true);
   const [newVideo, setNewVideo] = useState({ title: "", url: "", duration: "" });
 
- 
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch Tickets 
       const { data: ticketData } = await supabase
         .from("tickets")
         .select("*")
         .order("created_at", { ascending: false });
       
-      // Fetch Tutorials 
       const { data: tutorialData } = await supabase
         .from("tutorials")
         .select("*")
@@ -56,7 +53,7 @@ export default function Support() {
   };
 
   const openWhatsApp = (ticket: any) => {
-    const adminPhone = "8637261676"; // Admin Phone Number
+    const adminPhone = "8637261676";
     const text = encodeURIComponent(
       ` *Admin Live Support*\n\n` +
       `*From:* ${ticket.user_name}\n` +
@@ -71,7 +68,6 @@ export default function Support() {
     if (!error) fetchData();
   };
 
-  //  TUTORIAL 
   const handleAddTutorial = async () => {
     if (!newVideo.title || !newVideo.url) return;
     const { error } = await supabase.from("tutorials").insert([newVideo]);
@@ -85,6 +81,7 @@ export default function Support() {
     const { error } = await supabase.from("tutorials").delete().eq("id", id);
     if (!error) fetchData();
   };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "open":
@@ -118,7 +115,7 @@ export default function Support() {
         description="Monitor live user tickets and manage video tutorials."
       />
 
-      {/* --- DYNAMIC STATS SECTION --- */}
+      {/* Stats Section */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
         <Card className="shadow-sm border-l-4 border-l-red-500">
           <CardContent className="pt-6 flex justify-between items-center">
@@ -150,8 +147,7 @@ export default function Support() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* --- DYNAMIC TICKETS SECTION (LEFT) --- */}
+        {/* Support Tickets Section */}
         <Card className="lg:col-span-2 shadow-card">
           <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
             <CardTitle className="font-display">Live Support Tickets</CardTitle>
@@ -181,7 +177,8 @@ export default function Support() {
                       </div>
                     </div>
                     
-                    <div className="p-3 bg-background rounded-lg border text-sm italic">
+                    {/* Fixed: Ticket Message Wrap */}
+                    <div className="p-3 bg-background rounded-lg border text-sm italic break-words overflow-hidden">
                       "{ticket.message}"
                     </div>
 
@@ -206,7 +203,7 @@ export default function Support() {
           </CardContent>
         </Card>
 
-        {/* --- TUTORIAL MANAGEMENT SECTION (RIGHT) --- */}
+        {/* Tutorial Management Section */}
         <div className="space-y-6">
           <Card className="shadow-card border-primary/20 bg-primary/5">
             <CardHeader className="pb-3">
@@ -227,15 +224,26 @@ export default function Support() {
             <CardContent>
               <div className="space-y-3">
                 {tutorials.map((video) => (
-                  <div key={video.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/20 group">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Book className="w-4 h-4 text-primary" />
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{video.title}</p>
-                        <p className="text-xs text-muted-foreground">{video.duration} • {video.views || 0} views</p>
+                  <div key={video.id} className="flex items-start justify-between p-3 rounded-lg border bg-muted/20 group gap-2">
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      <Book className="w-4 h-4 text-primary mt-1 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        {/* Fixed: Tutorial Title Wrap */}
+                        <p className="text-sm font-medium break-words whitespace-normal leading-tight">
+                          {video.title}
+                        </p>
+                        {/* Fixed: Tutorial Duration/Meta Wrap */}
+                        <p className="text-xs text-muted-foreground break-all whitespace-normal mt-1">
+                          {video.duration} • {video.views || 0} views
+                        </p>
                       </div>
                     </div>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleDeleteTutorial(video.id)}>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity shrink-0" 
+                      onClick={() => handleDeleteTutorial(video.id)}
+                    >
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
