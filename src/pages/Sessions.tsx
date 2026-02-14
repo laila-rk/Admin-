@@ -74,7 +74,7 @@ export default function Sessions() {
         supabase
           .from("sessions")
           .select("*, session_assignments(client_id)")
-          .order("scheduled_at", { ascending: false }),
+          .order("created_at", { ascending: false }),
         supabase
           .from("profiles")
           .select("user_id, full_name, email")
