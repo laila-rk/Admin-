@@ -42,6 +42,8 @@ import logo from "@/assets/logo.png";
 import hexToHsl from "@/lib/hextohsl";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "@/contexts/ThemeContext";
 
 const featureToggles = [
   {
@@ -60,57 +62,32 @@ const featureToggles = [
 
 export default function Settings() {
   const [features, setFeatures] = useState(featureToggles);
-  const [fontSize, setFontSize] = useState(
-    () => localStorage.getItem("app-fontSize") || "medium",
-  );
-  const [contrast, setContrast] = useState(
-    () => localStorage.getItem("app-contrast") || "normal",
-  );
-  const [theme, setTheme] = useState<"light" | "dark">(
-    () => (localStorage.getItem("app-theme") as "light" | "dark") || "light",
-  );
+  // const [fontSize, setFontSize] = useState(
+  //   () => localStorage.getItem("app-fontSize") || "medium",
+  // );
+  // const [contrast, setContrast] = useState(
+  //   () => localStorage.getItem("app-contrast") || "normal",
+  // );
+  // const [theme, setTheme] = useState<"light" | "dark">(
+  //   () => (localStorage.getItem("app-theme") as "light" | "dark") || "light",
+  // );
 
-  const [primaryColor, setPrimaryColor] = useState(
-    () => localStorage.getItem("app-primary") || "#1a365d",
-  );
+  // const [primaryColor, setPrimaryColor] = useState(
+  //   () => localStorage.getItem("app-primary") || "#1a365d",
+  // );
 
-  const [accentColor, setAccentColor] = useState(
-    () => localStorage.getItem("app-accent") || "#1c9ebe",
-  );
+  // const [accentColor, setAccentColor] = useState(
+  //   () => localStorage.getItem("app-accent") || "#1c9ebe",
+  // );
 
   // Logo state
   const [currentLogoUrl, setCurrentLogoUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  
+  // const {user} = useAuth();
   const { toast } = useToast();
-
-  useEffect(() => {
-    const root = document.documentElement;
-
-    root.classList.remove("light", "dark");
-    root.classList.add(theme);
-
-    root.classList.remove(
-      "text-small",
-      "text-medium",
-      "text-large",
-      "text-xlarge",
-    );
-    root.classList.add(`text-${fontSize}`);
-
-    root.classList.remove("contrast-normal", "contrast-high");
-    root.classList.add(`contrast-${contrast}`);
-
-    root.style.setProperty("--primary", hexToHsl(primaryColor));
-    root.style.setProperty("--accent", hexToHsl(accentColor));
-
-    localStorage.setItem("app-theme", theme);
-    localStorage.setItem("app-fontSize", fontSize);
-    localStorage.setItem("app-contrast", contrast);
-    localStorage.setItem("app-primary", primaryColor);
-    localStorage.setItem("app-accent", accentColor);
-  }, [theme, fontSize, contrast, primaryColor, accentColor]);
+  const {setTheme, setFontSize, setContrast, setPrimaryColor, setAccentColor, theme, fontSize, contrast, primaryColor, accentColor} = useTheme();
 
   // Fetch logo on mount
   useEffect(() => {

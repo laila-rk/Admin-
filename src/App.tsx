@@ -15,6 +15,7 @@ import Settings from "./pages/Settings";
 import Users from "./pages/Users";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import { ThemeProvider } from "./contexts/ThemeContext";
 
 const queryClient = new QueryClient();
 
@@ -25,18 +26,92 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <Routes>
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/sessions" element={<ProtectedRoute><Sessions /></ProtectedRoute>} />
-            <Route path="/fitness" element={<ProtectedRoute><Fitness /></ProtectedRoute>} />
-            <Route path="/nutrition" element={<ProtectedRoute><Nutrition /></ProtectedRoute>} />
-            <Route path="/progress" element={<ProtectedRoute><Progress /></ProtectedRoute>} />
-            <Route path="/support" element={<ProtectedRoute><Support /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          
+            <Routes>
+              <Route path="/auth" element={<Auth />} />
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <ThemeProvider>
+                    <Dashboard />
+                    </ThemeProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/sessions"
+                element={
+                  <ProtectedRoute>
+                    <ThemeProvider>
+                    <Sessions />
+                    </ThemeProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/fitness"
+                element={
+                  <ProtectedRoute>
+                    <ThemeProvider>
+                    <Fitness />
+                    </ThemeProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/nutrition"
+                element={
+                  <ProtectedRoute>
+                    <ThemeProvider>
+                    <Nutrition />
+                    </ThemeProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/progress"
+                element={
+                  <ProtectedRoute>
+                    <ThemeProvider>
+                    <Progress />
+                    </ThemeProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/support"
+                element={
+                  <ProtectedRoute>
+                    <ThemeProvider>
+                    <Support />
+                    </ThemeProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/settings"
+                element={
+                  <ProtectedRoute>
+                    <ThemeProvider>
+                    <Settings />
+                    </ThemeProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/users"
+                element={
+                  <ProtectedRoute>
+                    <ThemeProvider>
+                    <Users />
+                    </ThemeProvider>
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          {/* </ThemeProvider> */}
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
