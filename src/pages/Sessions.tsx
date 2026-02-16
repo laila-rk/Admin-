@@ -52,6 +52,13 @@ export default function Sessions() {
     },
   ];
 
+  const getNearestHourTime = () => {
+    const now = new Date();
+    now.setMinutes(0, 0, 0); 
+    now.setHours(now.getHours() + 1); 
+
+    return now.toTimeString().slice(0, 5); 
+  };
 
   const [formData, setFormData] = useState({
     title: "",
@@ -60,7 +67,7 @@ export default function Sessions() {
     type: "live", 
     link: "",
     date: today,
-    time: "10:00",
+    time: getNearestHourTime(),
     isMass: true,
     selectedClientIds: [] as string[]
   });
@@ -78,6 +85,7 @@ export default function Sessions() {
         supabase
           .from("profiles")
           .select("user_id, full_name, email")
+          .order('created_at', {ascending: false})
       ]);
       
       if (sessRes.error) throw sessRes.error;
@@ -190,6 +198,7 @@ export default function Sessions() {
     if (!formData.link || !formData.title) return toast.error("Title and Link are required");
 
     const scheduledDateTime = new Date(`${formData.date}T${formData.time}:00`);
+    const now = new Date();
     
     if (formData.platform) {
       const platformDetails = sessionRegex.find(
@@ -209,6 +218,10 @@ export default function Sessions() {
       }
     }
 
+    if (scheduledDateTime <= now) {
+      toast.error("Please select a future time for session");
+      return;
+    }
 
     // 1. Insert the Session
     const { data: newSession, error: sessErr } = await supabase.from("sessions").insert([{
@@ -304,7 +317,7 @@ export default function Sessions() {
                 </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[550px] max-h-[90vh] overflow-y-auto">
-                <DialogHeader><DialogTitle className="text-slate-800">Schedule New Session</DialogTitle></DialogHeader>
+                <DialogHeader><DialogTitle className="text-foreground">Schedule New Session</DialogTitle></DialogHeader>
                 <div className="grid gap-4 py-2">
                 <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
@@ -444,7 +457,7 @@ export default function Sessions() {
       </div>
 
       <Card className="border-none shadow-sm">
-        <CardHeader><CardTitle className="text-xl font-bold text-slate-800">Session Management</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-xl font-bold text-foreground">Session Management</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-3">
             {loading ? <p className="text-center py-4 text-slate-400">Syncing database...</p> : 
@@ -464,14 +477,14 @@ export default function Sessions() {
               });
 
               return (
-                <div key={session.id} className="group flex items-center gap-4 p-5 rounded-2xl border border-slate-100 hover:border-sky-100 hover:bg-sky-50/30 transition-all">
+                <div key={session.id} className="group flex items-center gap-4 p-5 rounded-2xl border hover:border-sky-100 hover:bg-sky-50/30 transition-all">
                   <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white shadow-sm ${live ? 'bg-[#0ea5e9] animate-pulse' : 'bg-slate-200'}`}>
                     {session.type === 'recorded' ? <Film className="w-6 h-6" /> : <PlayCircle className="w-6 h-6 text-slate-400" />}
                   </div>
                   
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <h4 className="font-semibold text-slate-800">{session.title}</h4>
+                      <h4 className="font-semibold text-foreground">{session.title}</h4>
                       {live && <Badge className="bg-[#0ea5e9] text-white text-[10px] uppercase font-bold">LIVE</Badge>}
                       {session.admin_is_mass && <Badge variant="outline" className="text-[9px] border-blue-200 text-blue-500">PUBLIC</Badge>}
                     </div>
@@ -510,7 +523,7 @@ function StatCard({ title, value, icon, bgColor }: any) {
   return (
     <Card className="border-none shadow-sm">
       <CardContent className="pt-6 flex items-center justify-between">
-        <div><p className="text-xs font-bold text-slate-400 uppercase tracking-tight mb-1">{title}</p><p className="text-3xl font-bold text-slate-800">{value}</p></div>
+        <div><p className="text-xs font-bold text-muted-foreground uppercase tracking-tight mb-1">{title}</p><p className="text-3xl font-bold text-foreground">{value}</p></div>
         <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${bgColor}`}>{icon}</div>
       </CardContent>
     </Card>
