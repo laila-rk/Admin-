@@ -28,7 +28,13 @@ export default function Sessions() {
   const [clients, setClients] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const filteredClients = clients.filter(client => 
+    client.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    client.email?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   const today = new Date().toISOString().split('T')[0];
 
   const sessionRegex = [ 
@@ -46,8 +52,7 @@ export default function Sessions() {
     },
     {
       platform: "youtube",
-      regex:
-        /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/,
+      regex: /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/,
       regex2: /^(https?:\/\/)?(www\.)?youtube\.com\/shorts\/[\w-]+$/i
     },
   ];
@@ -56,7 +61,6 @@ export default function Sessions() {
     const now = new Date();
     now.setMinutes(0, 0, 0); 
     now.setHours(now.getHours() + 1); 
-
     return now.toTimeString().slice(0, 5); 
   };
 
@@ -75,8 +79,6 @@ export default function Sessions() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // We fetch sessions and profiles. 
-      // Added a manual count of assignments to verify visibility.
       const [sessRes, clientRes] = await Promise.all([
         supabase
           .from("sessions")
@@ -99,7 +101,6 @@ export default function Sessions() {
   };
 
   useEffect(() => { 
-    // REAL-TIME: If a user registers or is deleted, update the client list
     const profileSubscription = supabase
       .channel('admin-profile-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => fetchData())
@@ -136,7 +137,7 @@ export default function Sessions() {
     onSuccess: async (tokenResponse) => {
       const toastId = toast.loading("Generating Google Meet link...");
       try {
-        const startDateTime = `${formData.date}T${formData.time}:00Z`;
+        const startDateTime = new Date(`${formData.date}T${formData.time}`).toISOString();
         const endDate = new Date(`${formData.date}T${formData.time}:00Z`);
         endDate.setHours(endDate.getHours() + 1);
         const endDateTime = endDate.toISOString();
@@ -185,6 +186,13 @@ export default function Sessions() {
     return now >= startTime && now <= (startTime + duration);
   };
 
+  const isPastSession = (scheduledAt: string) => {
+    const startTime = new Date(scheduledAt).getTime();
+    const now = new Date().getTime();
+    const duration = 60 * 60 * 1000; 
+    return now > (startTime + duration);
+  };
+
   const handleToggleClient = (clientId: string) => {
     setFormData(prev => ({
       ...prev,
@@ -201,16 +209,9 @@ export default function Sessions() {
     const now = new Date();
     
     if (formData.platform) {
-      const platformDetails = sessionRegex.find(
-        (p) => p.platform === formData.platform,
-      );
-
+      const platformDetails = sessionRegex.find((p) => p.platform === formData.platform);
       if (platformDetails) {
-        const isValid =
-          platformDetails.regex.test(formData.link) ||
-          (platformDetails.regex2 &&
-            platformDetails.regex2.test(formData.link));
-
+        const isValid = platformDetails.regex.test(formData.link) || (platformDetails.regex2 && platformDetails.regex2.test(formData.link));
         if (!isValid) {
           toast.error(`Please Give Correct ${formData.platform} Link`);
           return;
@@ -223,7 +224,6 @@ export default function Sessions() {
       return;
     }
 
-    // 1. Insert the Session
     const { data: newSession, error: sessErr } = await supabase.from("sessions").insert([{
       title: formData.title,
       instructor: formData.trainer || "Coach",
@@ -237,7 +237,6 @@ export default function Sessions() {
 
     if (sessErr) return toast.error(sessErr.message);
 
-    // Handle Assignments (Only if NOT Mass Session)
     if (!formData.isMass && formData.selectedClientIds.length > 0) {
       const assignments = formData.selectedClientIds.map(cid => ({ 
         session_id: newSession.id, 
@@ -247,7 +246,6 @@ export default function Sessions() {
       if (assignErr) toast.error("Session created, but user assignment failed.");
     }
 
-    // Log Activity
     await supabase.from("activities").insert([{
       admin_user_name: formData.trainer || "Coach",
       admin_action_detail: `Scheduled ${formData.type} session: ${formData.title}`,
@@ -257,9 +255,10 @@ export default function Sessions() {
 
     toast.success("Session published successfully!");
     setIsModalOpen(false);
+    setSearchTerm("");
     setFormData({
       title: "", trainer: formData.trainer, platform: "zoom", type: "live", link: "",
-      date: today, time: "10:00", isMass: true, selectedClientIds: []
+      date: today, time: getNearestHourTime(), isMass: true, selectedClientIds: []
     });
     fetchData();
   };
@@ -279,28 +278,16 @@ export default function Sessions() {
     }
   };
 
-  const handleTrainerName = (e) => {
-    if (e.target.value === "") {
-      setFormData({ ...formData, trainer: ""});
-      return;
-    }
-    else if (e.target.value.length > 40) {
-      toast.error('Trainer Name length should be less than 40');
-      return;
-    }
-    setFormData({ ...formData, trainer: e.target.value });
+  const handleTrainerName = (e: any) => {
+    const val = e.target.value;
+    if (val.length > 40) return toast.error('Trainer Name length should be less than 40');
+    setFormData({ ...formData, trainer: val });
   }
 
-  const handleSessionTitle = (e) => {
-    if (e.target.value === "") {
-      setFormData({ ...formData, title: "" });
-      return;
-    }
-    else if (e.target.value.length > 40) {
-      toast.error("Session Title length should be less than 40");
-      return;
-    }
-     setFormData({ ...formData, title: e.target.value });
+  const handleSessionTitle = (e: any) => {
+    const val = e.target.value;
+    if (val.length > 40) return toast.error("Session Title length should be less than 40");
+    setFormData({ ...formData, title: val });
   }
 
   return (
@@ -338,8 +325,7 @@ export default function Sessions() {
                         value={formData.trainer} 
                         className="border-slate-200" 
                         placeholder="Coach name"
-                        onChange = {handleTrainerName}
-                        // onChange={(e) => setFormData({...formData, trainer: e.target.value})} 
+                        onChange={handleTrainerName}
                     />
                     </div>
                 </div>
@@ -350,8 +336,7 @@ export default function Sessions() {
                     value={formData.title} 
                     className="border-slate-200" 
                     placeholder="e.g. Morning Cardio"
-                    onChange = {handleSessionTitle}
-                    // onChange={(e) => setFormData({...formData, title: e.target.value})} 
+                    onChange={handleSessionTitle}
                     />
                 </div>
                 
@@ -385,25 +370,40 @@ export default function Sessions() {
                 </div>
 
                 {!formData.isMass && (
-                    <div className="border rounded-xl p-4 bg-slate-50/50 border-slate-200">
-                    <Label className="text-xs font-bold text-[#0ea5e9] mb-2 block">Assign to Clients ({formData.selectedClientIds.length})</Label>
+                  <div className="border rounded-xl p-4 bg-slate-50/50 border-slate-200">
+                    <div className="flex items-center justify-between mb-3 gap-3">
+                      <Label className="text-xs font-bold text-[#0ea5e9] shrink-0">
+                        Assign to Clients ({formData.selectedClientIds.length})
+                      </Label>
+                      <div className="relative flex-1">
+                        <UsersIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
+                        <Input 
+                          placeholder="Search name..." 
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="h-7 text-[10px] pl-7 pr-2 border-slate-200 bg-white"
+                        />
+                      </div>
+                    </div>
                     <ScrollArea className="h-[120px] pr-4">
-                        {clients.length === 0 ? (
-                            <p className="text-[10px] text-slate-400 text-center py-4">No users found in database.</p>
-                        ) : clients.map(client => (
-                        <div key={client.user_id} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+                      {filteredClients.length === 0 ? (
+                        <p className="text-[10px] text-slate-400 text-center py-4">No matching clients found.</p>
+                      ) : (
+                        filteredClients.map(client => (
+                          <div key={client.user_id} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
                             <div className="flex flex-col">
-                                <span className="text-xs font-medium text-slate-700">{client.full_name}</span>
-                                <span className="text-[9px] text-slate-400 uppercase font-mono">{client.user_id.slice(0,8)}...</span>
+                              <span className="text-xs font-medium text-slate-700">{client.full_name}</span>
+                              <span className="text-[9px] text-slate-400 uppercase font-mono">{client.user_id.slice(0,8)}...</span>
                             </div>
                             <Checkbox 
-                            checked={formData.selectedClientIds.includes(client.user_id)}
-                            onCheckedChange={() => handleToggleClient(client.user_id)}
+                              checked={formData.selectedClientIds.includes(client.user_id)}
+                              onCheckedChange={() => handleToggleClient(client.user_id)}
                             />
-                        </div>
-                        ))}
+                          </div>
+                        ))
+                      )}
                     </ScrollArea>
-                    </div>
+                  </div>
                 )}
 
                 <div className="grid grid-cols-2 gap-4">
@@ -423,10 +423,9 @@ export default function Sessions() {
                     <div className="flex items-center justify-between">
                         <Label className="text-slate-600">Video Link</Label>
                         <Button 
-                        type="button"
-                        variant="ghost" 
-                        className="h-6 text-[10px] text-[#0ea5e9] hover:bg-sky-50 px-2 flex items-center gap-1"
-                        onClick={() => generateMeetLink()}
+                          type="button" variant="ghost" 
+                          className="h-6 text-[10px] text-[#0ea5e9] px-2 flex items-center gap-1"
+                          onClick={() => generateMeetLink()}
                         >
                         <Video className="w-3 h-3" /> Auto-Meet
                         </Button>
@@ -463,30 +462,21 @@ export default function Sessions() {
             {loading ? <p className="text-center py-4 text-slate-400">Syncing database...</p> : 
               sessions.length === 0 ? <p className="text-center py-4 text-slate-400">No sessions scheduled.</p> :
               sessions.map((session) => {
-              const live = getLiveStatus(session.scheduled_at) && session.type !== 'recorded';
-              
-              // Count from nested join or mass logic
-              const participantCount = session.admin_is_mass 
-                ? "ALL" 
-                : (session.session_assignments?.length || 0);
-              
-              const sessionTime = new Date(session.scheduled_at).toLocaleTimeString([], { 
-                hour: '2-digit', 
-                minute: '2-digit',
-                hour12: false 
-              });
+              const isLive = getLiveStatus(session.scheduled_at) && session.type !== 'recorded';
+              const isPast = isPastSession(session.scheduled_at) && session.type !== 'recorded';
+              const participantCount = session.admin_is_mass ? "ALL" : (session.session_assignments?.length || 0);
+              const sessionTime = new Date(session.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
               return (
-                <div key={session.id} className="group flex items-center gap-4 p-5 rounded-2xl border hover:border-sky-100 hover:bg-sky-50/30 transition-all">
-                  <div className={`h-12 w-12 rounded-xl flex items-center justify-center text-white shadow-sm ${live ? 'bg-[#0ea5e9] animate-pulse' : 'bg-slate-200'}`}>
-                    {session.type === 'recorded' ? <Film className="w-6 h-6" /> : <PlayCircle className="w-6 h-6 text-slate-400" />}
-                  </div>
-                  
+                <div key={session.id} className={`group flex items-center gap-4 p-5 rounded-2xl border transition-all ${
+                  isPast ? 'opacity-50 bg-slate-50/30 border-slate-100 grayscale-[0.5]' : 'hover:border-sky-100 hover:bg-sky-50/30 border-slate-200'
+                }`}>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <h4 className="font-semibold text-foreground">{session.title}</h4>
-                      {live && <Badge className="bg-[#0ea5e9] text-white text-[10px] uppercase font-bold">LIVE</Badge>}
-                      {session.admin_is_mass && <Badge variant="outline" className="text-[9px] border-blue-200 text-blue-500">PUBLIC</Badge>}
+                      {isLive && <Badge className="bg-[#0ea5e9] text-white text-[10px] uppercase font-bold">LIVE</Badge>}
+                      {isPast && <Badge variant="secondary" className="text-[9px] bg-slate-200 text-slate-500 border-none uppercase">PAST</Badge>}
+                      {session.admin_is_mass && <Badge variant="outline" className="text-[9px] border-blue-200 text-blue-500 uppercase">PUBLIC</Badge>}
                     </div>
                     <p className="text-sm text-slate-400 font-medium capitalize">Coach {session.instructor}</p>
                   </div>
@@ -496,7 +486,6 @@ export default function Sessions() {
                       <Clock className="w-4 h-4 text-[#0ea5e9]" />
                       <span className="text-sm font-bold">{sessionTime}</span>
                     </div>
-                    
                     <div className="flex items-center gap-2 text-slate-500 bg-white px-3 py-1.5 rounded-lg border border-slate-100 min-w-[110px]">
                       <UsersIcon className="w-4 h-4 text-slate-400" />
                       <span className="text-sm font-semibold">{participantCount} {session.admin_is_mass ? '' : 'Clients'}</span>
