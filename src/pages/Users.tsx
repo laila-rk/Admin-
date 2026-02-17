@@ -69,7 +69,6 @@ export default function Users() {
   const { isAdmin, loading: adminLoading } = useAdminCheck();
   const { user: currentUser } = useAuth();
 
-  // Optimized fetch function wrapped in useCallback to prevent re-renders
   const fetchUsers = useCallback(async () => {
     try {
       setLoading(true);
@@ -82,7 +81,6 @@ export default function Users() {
       if (rolesRes.error) throw rolesRes.error;
 
       const rolesMap = new Map(rolesRes.data.map(r => [r.user_id, r.role]));
-
       const formattedUsers: UserWithRole[] = (profilesRes.data || []).map((profile) => ({
         id: profile.id,
         user_id: profile.user_id,
@@ -95,28 +93,15 @@ export default function Users() {
 
       setUsers(formattedUsers);
     } catch (error: any) {
-      toast({
-        title: "Sync Error",
-        description: error.message || "Failed to load latest user registry.",
-        variant: "destructive",
-      });
+      toast({ title: "Sync Error", description: error.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
   }, [toast]);
 
-  //  Subscription logic
   useEffect(() => {
     if (!isAdmin) return;
     fetchUsers();
-
-    const channel = supabase
-      .channel("live-user-updates")
-      .on("postgres_changes", { event: "*", table: "user_roles", schema: "public" }, () => fetchUsers())
-      .on("postgres_changes", { event: "*", table: "profiles", schema: "public" }, () => fetchUsers())
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
   }, [isAdmin, fetchUsers]);
 
   const filteredUsers = useMemo(() => {
@@ -129,11 +114,7 @@ export default function Users() {
 
   const handleRoleChange = (user: UserWithRole, newRole: AppRole) => {
     if (user.user_id === currentUser?.id) {
-      toast({
-        title: "Action Restricted",
-        description: "You cannot change your own administrative permissions.",
-        variant: "destructive",
-      });
+      toast({ title: "Restricted", description: "You cannot demote yourself.", variant: "destructive" });
       return;
     }
     setRoleChangeDialog({ open: true, user, newRole });
@@ -141,148 +122,112 @@ export default function Users() {
 
   const confirmRoleChange = async () => {
     if (!roleChangeDialog.user || !roleChangeDialog.newRole) return;
-    const { user, newRole } = roleChangeDialog;
-    
     setUpdating(true);
     try {
-      const { error } = await supabase
-        .from("user_roles")
-        .update({ role: newRole })
-        .eq("user_id", user.user_id);
-
+      const { error } = await supabase.from("user_roles").update({ role: roleChangeDialog.newRole }).eq("user_id", roleChangeDialog.user.user_id);
       if (error) throw error;
-
-      //  Update local state 
-      setUsers(prev => prev.map(u => u.user_id === user.user_id ? { ...u, role: newRole } : u));
-      
-      toast({ title: "Role Updated", description: `Updated ${user.full_name || 'user'} to ${newRole}.` });
+      setUsers(prev => prev.map(u => u.user_id === roleChangeDialog.user?.user_id ? { ...u, role: roleChangeDialog.newRole! } : u));
+      toast({ title: "Success", description: "Role updated." });
     } catch (error: any) {
-      toast({ title: "Update Failed", description: error.message, variant: "destructive" });
+      toast({ title: "Failed", description: error.message, variant: "destructive" });
     } finally {
       setUpdating(false);
       setRoleChangeDialog({ open: false, user: null, newRole: null });
     }
   };
 
-  if (adminLoading) return <DashboardLayout><div className="p-8 space-y-4"><Skeleton className="h-10 w-1/3" /><Skeleton className="h-64 w-full" /></div></DashboardLayout>;
-  if (!isAdmin) return <DashboardLayout><div className="flex flex-col items-center justify-center min-h-[50vh] text-center"><ShieldAlert className="w-16 h-16 text-destructive/50 mb-4" /><h2 className="text-2xl font-bold">Unauthorized Access</h2></div></DashboardLayout>;
+  if (adminLoading) return <DashboardLayout><div className="p-4"><Skeleton className="h-64 w-full" /></div></DashboardLayout>;
+  if (!isAdmin) return <DashboardLayout><div className="p-20 text-center"><ShieldAlert className="mx-auto h-12 w-12 text-destructive/50" /></div></DashboardLayout>;
 
   return (
     <DashboardLayout>
       <PageHeader title="User Management" description="Real-time access control.">
         <Button onClick={fetchUsers} variant="outline" size="sm" disabled={loading}>
           <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-          Sync Data
+          Sync
         </Button>
       </PageHeader>
 
-      <Card className="shadow-sm border-muted">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg font-semibold flex items-center gap-2">
-            <UsersIcon className="w-5 h-5 text-primary" />
+      <Card className="border-muted shadow-none overflow-hidden">
+        <CardHeader className="p-4 border-b flex flex-row items-center justify-between space-y-0 bg-muted/10">
+          <CardTitle className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+            <UsersIcon className="w-4 h-4 text-primary" />
             Registry ({filteredUsers.length})
           </CardTitle>
-          <div className="relative w-full max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
-              placeholder="Search..."
+              placeholder="Filter by name/email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 h-10"
+              className="pl-8 h-8 w-64 text-xs bg-background"
             />
           </div>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>Email Address</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading && users.length === 0 ? (
-                [...Array(5)].map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={4}><Skeleton className="h-12 w-full" /></TableCell></TableRow>
-                ))
-              ) : filteredUsers.length === 0 ? (
-                <TableRow><TableCell colSpan={4} className="text-center py-20 text-muted-foreground">No users found.</TableCell></TableRow>
-              ) : (
-                filteredUsers.map((user) => {
-                  const RoleIcon = roleConfig[user.role].icon;
-                  const isCurrentUser = user.user_id === currentUser?.id;
-
-                  return (
-                    <TableRow key={user.id} className="group">
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center overflow-hidden">
-                            {user.avatar_url ? (
-                                <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                                <span className="text-xs font-bold text-accent">
-                                    {(user.full_name?.[0] || user.email?.[0] || "U").toUpperCase()}
-                                </span>
-                            )}
-                          </div>
-                          <div className="flex flex-col">
-                            <div className="font-medium flex items-center gap-2">
-                              {user.full_name || "Unnamed User"}
-                              {isCurrentUser && (
-                                <Badge variant="secondary" className="h-4 text-[10px] px-1 font-bold">YOU</Badge>
-                              )}
-                            </div>
-                          </div>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table className="min-w-full table-fixed border-collapse">
+              <TableHeader className="bg-muted/30">
+                <TableRow>
+                  <TableHead className="w-[200px] h-9 text-[11px] uppercase pl-6 font-bold">Member Name</TableHead>
+                  <TableHead className="w-[250px] h-9 text-[11px] uppercase font-bold">Email Address</TableHead>
+                  <TableHead className="w-[120px] h-9 text-[11px] uppercase font-bold text-center">Current Role</TableHead>
+                  <TableHead className="w-[150px] h-9 text-[11px] uppercase font-bold text-right pr-6">Management</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredUsers.map((user) => (
+                  <TableRow key={user.id} className="hover:bg-muted/20 border-b last:border-0 transition-colors">
+                    <TableCell className="py-2 pl-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-7 h-7 rounded bg-primary/10 flex items-center justify-center text-[10px] font-bold shrink-0">
+                          {(user.full_name?.[0] || user.email?.[0] || "U").toUpperCase()}
                         </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {user.email || <span className="text-xs italic opacity-40">not set</span>}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={`${roleConfig[user.role].color} flex items-center gap-1.5 w-fit font-normal`}>
-                          <RoleIcon className="w-3 h-3" />
-                          {roleConfig[user.role].label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Select
-                          value={user.role}
-                          onValueChange={(val: AppRole) => handleRoleChange(user, val)}
-                          disabled={isCurrentUser || updating}
-                        >
-                          <SelectTrigger className="w-32 ml-auto h-9 bg-background">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="admin">Admin</SelectItem>
-                            <SelectItem value="user">User</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
+                        <span className="text-xs font-semibold truncate block max-w-[140px]" title={user.full_name || ""}>
+                          {user.full_name || "Unnamed User"}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-2 text-xs text-muted-foreground">
+                      <span className="truncate block max-w-[220px]" title={user.email || ""}>
+                        {user.email || "not set"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="py-2 text-center">
+                      <Badge variant="outline" className={`${roleConfig[user.role].color} text-[9px] px-2 py-0 h-4 border-none uppercase font-bold`}>
+                        {user.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="py-2 text-right pr-6">
+                      <Select value={user.role} onValueChange={(val: AppRole) => handleRoleChange(user, val)} disabled={user.user_id === currentUser?.id || updating}>
+                        <SelectTrigger className="h-7 w-28 ml-auto text-[10px] bg-background">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="admin" className="text-xs font-bold text-destructive">ADMIN</SelectItem>
+                          <SelectItem value="user" className="text-xs font-medium">USER</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
       <AlertDialog open={roleChangeDialog.open} onOpenChange={(o) => !updating && setRoleChangeDialog(prev => ({ ...prev, open: o }))}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-xs rounded-lg">
           <AlertDialogHeader>
-            <AlertDialogTitle>Change Permissions?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Assign <strong>{roleChangeDialog.newRole}</strong> permissions to <strong>{roleChangeDialog.user?.email || roleChangeDialog.user?.full_name}</strong>?
+            <AlertDialogTitle className="text-sm">Modify Permissions?</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs">
+              Assign <b>{roleChangeDialog.newRole?.toUpperCase()}</b> access to this account?
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={updating}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmRoleChange} disabled={updating} className={updating ? "opacity-50 pointer-events-none" : ""}>
-              {updating ? "Processing..." : "Confirm Update"}
-            </AlertDialogAction>
+          <AlertDialogFooter className="flex-row gap-2">
+            <AlertDialogCancel className="text-xs h-8 flex-1">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRoleChange} className="text-xs h-8 flex-1">Confirm</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
