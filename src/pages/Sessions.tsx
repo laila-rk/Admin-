@@ -498,10 +498,14 @@ export default function Sessions() {
                   </div>
 
                   <div className="flex items-center flex-wrap gap-2 sm:gap-6">
-                    <div className="flex items-center gap-2 text-slate-500 bg-white px-2 py-1.5 rounded-lg border border-slate-100">
-                      <Clock className="w-3.5 h-3.5 text-[#0ea5e9]" />
-                      <span className="text-xs sm:text-sm font-bold">{sessionTime}</span>
-                    </div>
+                   <div className="flex items-center gap-2 text-slate-500 bg-white px-2 py-1.5 rounded-lg border border-slate-100">
+              {session.type === 'recorded' ? (
+            <Video className="w-3.5 h-3.5 text-purple-500" />) : (<Clock className="w-3.5 h-3.5 text-[#0ea5e9]" />)
+                  }
+                 <span className="text-xs sm:text-sm font-bold">
+              {session.type === 'recorded' ? 'Library' : sessionTime}
+            </span>
+                 </div>
                     <div className="flex items-center gap-2 text-slate-500 bg-white px-2 py-1.5 rounded-lg border border-slate-100 min-w-[90px] sm:min-w-[110px]">
                       <UsersIcon className="w-3.5 h-3.5 text-slate-400" />
                       <span className="text-xs sm:text-sm font-semibold">{participantCount} Clients</span>
