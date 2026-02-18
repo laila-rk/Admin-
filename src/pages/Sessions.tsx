@@ -178,14 +178,16 @@ export default function Sessions() {
     scope: 'https://www.googleapis.com/auth/calendar.events',
   });
 
-  const getLiveStatus = (scheduledAt: string) => {
-    const startTime = new Date(scheduledAt).getTime();
-    const now = new Date().getTime();
-    const duration = 60 * 60 * 1000; 
-    return now >= startTime && now <= (startTime + duration);
-  };
+  const getLiveStatus = (scheduledAt: string, type: string) => {
+  if (type === 'recorded') return false; 
+  const startTime = new Date(scheduledAt).getTime();
+  const now = new Date().getTime();
+  const duration = 60 * 60 * 1000; 
+  return now >= startTime && now <= (startTime + duration);
+};
 
-  const isPastSession = (scheduledAt: string) => {
+  const isPastSession = (scheduledAt: string, type: string) => {
+    if (type === 'recorded') return false;
     const startTime = new Date(scheduledAt).getTime();
     const now = new Date().getTime();
     const duration = 60 * 60 * 1000; 
@@ -438,7 +440,7 @@ export default function Sessions() {
       </PageHeader>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
-        <StatCard title="Live Now" value={sessions.filter(s => getLiveStatus(s.scheduled_at) && s.type !== 'recorded').length} icon={<Video className="text-[#0ea5e9]" />} bgColor="bg-sky-50" />
+        <StatCard title="Live Now" value={sessions.filter(s => getLiveStatus(s.scheduled_at, s.type)).length} icon={<Video className="text-[#0ea5e9]" />} bgColor="bg-sky-50" />
         <StatCard title="Total Workouts" value={sessions.length} icon={<CalendarIcon className="text-[#0ea5e9]" />} bgColor="bg-sky-50" />
         <StatCard title="Active Clients" value={clients.length} icon={<UsersIcon className="text-slate-400" />} bgColor="bg-slate-50" />
       </div>
@@ -450,8 +452,10 @@ export default function Sessions() {
             {loading ? <p className="text-center py-4 text-slate-400">Syncing database...</p> : 
               sessions.length === 0 ? <p className="text-center py-4 text-slate-400">No sessions scheduled.</p> :
               sessions.map((session) => {
-              const isLive = getLiveStatus(session.scheduled_at) && session.type !== 'recorded';
-              const isPast = isPastSession(session.scheduled_at) && session.type !== 'recorded';
+              //const isLive = getLiveStatus(session.scheduled_at) && session.type !== 'recorded';
+             // const isPast = isPastSession(session.scheduled_at) && session.type !== 'recorded';
+             const isLive = getLiveStatus(session.scheduled_at, session.type);
+              const isPast = isPastSession(session.scheduled_at, session.type);
               const participantCount = session.admin_is_mass ? "ALL" : (session.session_assignments?.length || 0);
               const sessionTime = new Date(session.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
