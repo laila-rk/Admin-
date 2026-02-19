@@ -46,7 +46,7 @@ export default function Fitness() {
       const { data:ExerciseData, error } = await supabase
         .from("exercises")
         .select("*")
-        .order("name", { ascending: true });
+        .order("created_at", { ascending: false });
       if (error) {
         console.error("Supabase Connection Error:", error.message);
         throw error;
